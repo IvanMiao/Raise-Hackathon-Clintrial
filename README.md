@@ -26,10 +26,13 @@ VULTR_INVOICE_EXTRACTION_MODEL=Qwen/Qwen3.6-27B
 VULTR_INVOICE_EXTRACTION_TIMEOUT_MS=60000
 VULTR_RETRIEVAL_PLANNER_MODEL=moonshotai/Kimi-K2.6
 VULTR_RETRIEVAL_PLANNER_TIMEOUT_MS=12000
+VULTR_EVIDENCE_RANKER_MODEL=vultr/VultronRetrieverFlash-Qwen3.5-0.8B
+VULTR_EVIDENCE_RANKER_TIMEOUT_MS=20000
 # Optional: leave unset to avoid truncating reasoning/vision model output.
 # VULTR_MAX_TOKENS=2000
 # VULTR_INVOICE_EXTRACTION_MAX_TOKENS=2000
 # VULTR_RETRIEVAL_PLANNER_MAX_TOKENS=2000
+# VULTR_EVIDENCE_RANKER_MAX_TOKENS=2000
 ```
 
 `VULTR_INFERENCE_KEY` is not the same as the Vultr account `VULTR_API_KEY`.
@@ -38,9 +41,16 @@ vision extraction. SVG/PDF uploads may use the demo fixture fallback in demo
 mode.
 `VULTR_RETRIEVAL_PLANNER_MODEL` can point to any Vultr chat-completion model
 available to the account; if unset, the retrieval planner uses `VULTR_MODEL`.
+`VULTR_EVIDENCE_RANKER_MODEL` defaults to Vultr's `/rerank`-only
+VultronRetriever model. It ranks only backend-supplied local evidence ids and
+does not generate facts or boundaries. It does not inherit `VULTR_MODEL`; set it
+explicitly to a chat-completion model only when you want the JSON
+evidence-ranker prompt instead. If ranking fails, WiseGate falls back to
+deterministic evidence ordering.
 WiseGate does not send `max_tokens` by default; set `VULTR_MAX_TOKENS` or
 `VULTR_INVOICE_EXTRACTION_MAX_TOKENS` /
-`VULTR_RETRIEVAL_PLANNER_MAX_TOKENS` only when you explicitly want a cap.
+`VULTR_RETRIEVAL_PLANNER_MAX_TOKENS` /
+`VULTR_EVIDENCE_RANKER_MAX_TOKENS` only when you explicitly want a cap.
 
 ## Development
 

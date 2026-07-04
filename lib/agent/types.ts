@@ -75,6 +75,8 @@ export type AgentReviewResult = {
   uploadedInvoice: UploadedInvoiceSummary;
   extractedLines: InvoiceLine[];
   retrievalPlans?: Record<string, RetrievalPlan>;
+  evidenceByLineId?: Record<string, EvidenceCard[]>;
+  recommendationsByLineId?: Record<string, BoundaryRecommendation>;
   recommendations: BoundaryRecommendation[];
   completedAt: string;
 };

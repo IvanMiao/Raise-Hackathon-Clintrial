@@ -136,6 +136,24 @@ function normalizeTokens(value: string): string[] {
   return value.toLowerCase().match(/[a-z0-9]+/g) ?? [];
 }
 
+function normalizeVisitName(value: string | undefined): string {
+  const normalized = value?.toLowerCase().replace(/\s+/g, " ").trim() ?? "";
+  const visitMatch = normalized.match(/\bvisit\s*\d+\b/);
+
+  if (visitMatch?.[0]) {
+    return visitMatch[0].replace(/\s+/g, " ");
+  }
+
+  return normalized;
+}
+
+function visitNamesMatch(left: string | undefined, right: string): boolean {
+  const normalizedLeft = normalizeVisitName(left);
+  const normalizedRight = normalizeVisitName(right);
+
+  return normalizedLeft.length > 0 && normalizedLeft === normalizedRight;
+}
+
 function compactExcerpt(parts: string[]): string {
   return parts.filter((part) => part.trim().length > 0).join(" | ");
 }
@@ -282,7 +300,7 @@ function coverageScore(rule: CoverageRule, input: LocalEvidenceSearchInput): num
     score += 10;
   }
 
-  if (input.invoiceLine?.visitName === rule.visitName || rule.visitName === "Any") {
+  if (visitNamesMatch(input.invoiceLine?.visitName, rule.visitName) || rule.visitName === "Any") {
     score += 2;
   }
 
@@ -411,7 +429,7 @@ function siteEvidenceScore(row: SiteEvidenceRow, input: LocalEvidenceSearchInput
     score += 8;
   }
 
-  if (visitName && row.visitName === visitName) {
+  if (visitName && visitNamesMatch(visitName, row.visitName)) {
     score += 5;
   }
 
@@ -443,7 +461,7 @@ function siteEvidenceMatchesConstraints(
     return false;
   }
 
-  if (visitName && row.visitName !== visitName) {
+  if (visitName && !visitNamesMatch(visitName, row.visitName)) {
     return false;
   }
 
@@ -516,7 +534,7 @@ function ledgerScore(row: PriorLedgerRow, input: LocalEvidenceSearchInput): numb
     score += 8;
   }
 
-  if (visitName && row.visitName === visitName) {
+  if (visitName && visitNamesMatch(visitName, row.visitName)) {
     score += 5;
   }
 
@@ -555,7 +573,7 @@ function ledgerMatchesConstraints(
     return false;
   }
 
-  if (visitName && row.visitName !== visitName) {
+  if (visitName && !visitNamesMatch(visitName, row.visitName)) {
     return false;
   }
 

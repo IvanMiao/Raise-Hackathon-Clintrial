@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
 
 import { createAgentEventStream } from "@/lib/agent/events";
+import { evaluatePaymentLine } from "@/lib/agent/evaluatePaymentLine";
+import {
+  searchAndRankEvidenceForInvoiceLine,
+  type RankedEvidenceSearchResult,
+} from "@/lib/agent/evidenceSearch";
 import { InvoiceExtractionError } from "@/lib/agent/invoiceExtraction";
 import { extractInvoiceLinesFromUpload } from "@/lib/agent/vultrInvoiceExtraction";
 import { createRetrievalPlanForInvoiceLine } from "@/lib/agent/vultrRetrievalPlanner";
 import type {
   AgentReviewMode,
+  BoundaryRecommendation,
+  EvidenceCard,
   InvoiceLine,
   RetrievalPlan,
   UploadedInvoiceSummary,
@@ -39,6 +46,16 @@ type PendingRetrievalPlan = {
     line: InvoiceLine;
     lineIndex: number;
     result: RetrievalPlanResult;
+  }>;
+};
+
+type PendingEvidenceSearch = {
+  line: InvoiceLine;
+  lineIndex: number;
+  promise: Promise<{
+    line: InvoiceLine;
+    lineIndex: number;
+    result: RankedEvidenceSearchResult;
   }>;
 };
 
@@ -328,6 +345,138 @@ export async function POST(request: Request) {
     await pauseTrace();
 
     writer.send({
+      type: "step",
+      label: "evidence search and ranking",
+      status: "running",
+    });
+    await pauseTrace();
+
+    const pendingEvidenceSearches: PendingEvidenceSearch[] = extractedLines.map(
+      (line, lineIndex) => {
+        const plan = retrievalPlans[line.id];
+
+        return {
+          line,
+          lineIndex,
+          promise: searchAndRankEvidenceForInvoiceLine(line, plan).then(
+            (result) => ({
+              line,
+              lineIndex,
+              result,
+            }),
+          ),
+        };
+      },
+    );
+    const evidenceByLineId: Record<string, EvidenceCard[]> = {};
+    let evidenceFallbackCount = 0;
+    let pendingEvidence = pendingEvidenceSearches;
+
+    while (pendingEvidence.length > 0) {
+      const settledEvidence = await Promise.race(
+        pendingEvidence.map((pendingSearch) =>
+          pendingSearch.promise.then((value) => ({
+            pendingSearch,
+            value,
+          })),
+        ),
+      );
+
+      pendingEvidence = pendingEvidence.filter(
+        (pendingSearch) => pendingSearch !== settledEvidence.pendingSearch,
+      );
+      const { line, lineIndex, result } = settledEvidence.value;
+
+      evidenceByLineId[line.id] = result.evidence;
+
+      if (result.usedDeterministicFallback) {
+        evidenceFallbackCount += 1;
+      }
+
+      for (const searchEvent of result.searchEvents) {
+        writer.send({
+          type: "search",
+          lineId: line.id,
+          query: searchEvent.query,
+          sources: searchEvent.sources,
+        });
+        await pauseTrace();
+      }
+
+      writer.send({
+        type: "step",
+        label: `evidence ranked line ${lineIndex + 1}`,
+        status: "done",
+      });
+      await pauseTrace();
+
+      writer.send({
+        type: "evidence",
+        lineId: line.id,
+        evidence: result.evidence,
+      });
+      await pauseTrace();
+    }
+
+    if (evidenceFallbackCount > 0) {
+      writer.send({
+        type: "step",
+        label: `${evidenceFallbackCount} evidence rankings used deterministic fallback`,
+        status: "done",
+      });
+      await pauseTrace();
+    }
+
+    writer.send({
+      type: "step",
+      label: "evidence search and ranking",
+      status: "done",
+    });
+    await pauseTrace();
+
+    writer.send({
+      type: "step",
+      label: "deterministic boundary evaluation",
+      status: "running",
+    });
+    await pauseTrace();
+
+    const recommendationsByLineId: Record<string, BoundaryRecommendation> = {};
+    const recommendations: BoundaryRecommendation[] = [];
+
+    for (const [lineIndex, line] of extractedLines.entries()) {
+      const recommendation = evaluatePaymentLine({
+        line,
+        plan: retrievalPlans[line.id],
+        evidence: evidenceByLineId[line.id] ?? [],
+      });
+
+      recommendationsByLineId[line.id] = recommendation;
+      recommendations.push(recommendation);
+
+      writer.send({
+        type: "step",
+        label: `boundary evaluated line ${lineIndex + 1}`,
+        status: "done",
+      });
+      await pauseTrace();
+
+      writer.send({
+        type: "decision",
+        lineId: line.id,
+        recommendation,
+      });
+      await pauseTrace();
+    }
+
+    writer.send({
+      type: "step",
+      label: "deterministic boundary evaluation",
+      status: "done",
+    });
+    await pauseTrace();
+
+    writer.send({
       type: "complete",
       result: {
         runId,
@@ -335,7 +484,9 @@ export async function POST(request: Request) {
         uploadedInvoice: validation.request.invoice,
         extractedLines,
         retrievalPlans,
-        recommendations: [],
+        evidenceByLineId,
+        recommendationsByLineId,
+        recommendations,
         completedAt: new Date().toISOString(),
       },
     });

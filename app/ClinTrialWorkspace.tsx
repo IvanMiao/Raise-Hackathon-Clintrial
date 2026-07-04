@@ -6,6 +6,7 @@ import type {
   AgentEvent,
   AgentReviewMode,
   AgentReviewResult,
+  BoundaryRecommendation,
   EvidenceCard,
   InvoiceLine,
   RetrievalPlan,
@@ -23,6 +24,7 @@ type TraceItem = {
 };
 
 const emptyRetrievalPlans: Record<string, RetrievalPlan> = {};
+const emptyRecommendations: Record<string, BoundaryRecommendation> = {};
 const maxImageUploadSizeBytes = 5 * 1024 * 1024;
 const maxImageUploadSizeLabel = "5 MB";
 
@@ -44,6 +46,13 @@ const evidenceStyles: Record<EvidenceCard["status"], string> = {
   partial: "border-blue-200 bg-blue-50 text-blue-800",
   missing: "border-slate-200 bg-slate-100 text-slate-700",
   blocked: "border-rose-200 bg-rose-50 text-rose-800",
+};
+
+const boundaryStyles: Record<BoundaryRecommendation["boundary"], string> = {
+  "Auto-handle candidate": "border-emerald-200 bg-emerald-50 text-emerald-800",
+  "AI recommend + finance confirm": "border-blue-200 bg-blue-50 text-blue-800",
+  "Human review required": "border-rose-200 bg-rose-50 text-rose-800",
+  "Policy or contract gap": "border-amber-200 bg-amber-50 text-amber-800",
 };
 
 const demoInvoiceSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
@@ -128,6 +137,20 @@ function EvidenceStatusBadge({ status }: { status: EvidenceCard["status"] }) {
   );
 }
 
+function BoundaryBadge({
+  boundary,
+}: {
+  boundary: BoundaryRecommendation["boundary"];
+}) {
+  return (
+    <span
+      className={`rounded border px-2 py-1 text-xs font-semibold ${boundaryStyles[boundary]}`}
+    >
+      {boundary}
+    </span>
+  );
+}
+
 function TraceBadge({ status }: { status: TraceStatus }) {
   return (
     <span
@@ -200,6 +223,8 @@ export function ClinTrialWorkspace() {
   const [evidenceByLineId, setEvidenceByLineId] = useState<
     Record<string, EvidenceCard[]>
   >({});
+  const [recommendationsByLineId, setRecommendationsByLineId] =
+    useState<Record<string, BoundaryRecommendation>>(emptyRecommendations);
   const [summary, setSummary] = useState<string | null>(null);
   const [result, setResult] = useState<AgentReviewResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -214,6 +239,9 @@ export function ClinTrialWorkspace() {
   const selectedEvidence = selectedLine
     ? (evidenceByLineId[selectedLine.id] ?? [])
     : [];
+  const selectedRecommendation = selectedLine
+    ? recommendationsByLineId[selectedLine.id]
+    : undefined;
   const completedPlanCount = planCount(retrievalPlans);
   const reviewState: ReviewState = errorMessage
     ? "failed"
@@ -254,6 +282,7 @@ export function ClinTrialWorkspace() {
     setRetrievalPlans(emptyRetrievalPlans);
     setSelectedLineId(null);
     setEvidenceByLineId({});
+    setRecommendationsByLineId(emptyRecommendations);
     setSummary(null);
     setResult(null);
     setErrorMessage(null);
@@ -310,6 +339,10 @@ export function ClinTrialWorkspace() {
     }
 
     if (event.type === "decision") {
+      setRecommendationsByLineId((items) => ({
+        ...items,
+        [event.lineId]: event.recommendation,
+      }));
       appendTrace(
         "Boundary recommendation ready",
         "done",
@@ -332,6 +365,10 @@ export function ClinTrialWorkspace() {
 
     setResult(event.result);
     setRetrievalPlans(event.result.retrievalPlans ?? emptyRetrievalPlans);
+    setEvidenceByLineId(event.result.evidenceByLineId ?? {});
+    setRecommendationsByLineId(
+      event.result.recommendationsByLineId ?? emptyRecommendations,
+    );
     appendTrace("Review stream complete", "done", event.result.completedAt);
   }
 
@@ -835,15 +872,58 @@ export function ClinTrialWorkspace() {
                 ))
               ) : (
                 <EmptyPanel
-                  text="Phase 5 will rank retrieved evidence cards after local search results are available."
-                  title="Evidence ranker pending"
+                  text="Evidence cards will appear here after local search and ranker events complete for the selected line."
+                  title="Evidence pending"
                 />
               )}
 
-              <EmptyPanel
-                text="Phase 6 will generate the deterministic automation boundary. The current UI does not fabricate a payment recommendation."
-                title="Boundary evaluator pending"
-              />
+              {selectedRecommendation ? (
+                <article className="rounded border border-slate-200 bg-white p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-950">
+                        Automation boundary
+                      </h3>
+                      <p className="mt-1 text-xs font-medium text-slate-500">
+                        Deterministic read-only recommendation
+                      </p>
+                    </div>
+                    <BoundaryBadge boundary={selectedRecommendation.boundary} />
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-slate-700">
+                    {selectedRecommendation.decisionReason}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600">
+                      Score {(selectedRecommendation.score * 100).toFixed(0)}%
+                    </span>
+                    {selectedRecommendation.riskFlags.length > 0 ? (
+                      selectedRecommendation.riskFlags.map((flag) => (
+                        <span
+                          className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800"
+                          key={flag}
+                        >
+                          {flag}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">
+                        no blocking risk flags
+                      </span>
+                    )}
+                  </div>
+                  <ol className="mt-3 space-y-2 text-sm leading-5 text-slate-600">
+                    {selectedRecommendation.auditTrail.slice(0, 4).map((item) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ol>
+                </article>
+              ) : (
+                <EmptyPanel
+                  text="The deterministic boundary will appear after evidence ranking completes for the selected line."
+                  title="Boundary evaluator pending"
+                />
+              )}
 
               {summary ? (
                 <div className="rounded border border-slate-200 bg-slate-50 p-4">
@@ -882,6 +962,12 @@ export function ClinTrialWorkspace() {
                       <dt className="text-emerald-700">Plans</dt>
                       <dd className="mt-1 font-semibold text-emerald-950">
                         {planCount(result.retrievalPlans ?? emptyRetrievalPlans)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-emerald-700">Decisions</dt>
+                      <dd className="mt-1 font-semibold text-emerald-950">
+                        {result.recommendations.length}
                       </dd>
                     </div>
                   </dl>
