@@ -74,7 +74,7 @@ function Landing() {
               className="animate-fade-up flex items-center gap-2 label-eyebrow"
               style={{ animationDelay: "180ms" }}
             >
-              <GreenDot /> RAISE 2026 // Healthcare
+              <GreenDot /> RAISE 2026 // FINANCE · HEALTHCARE
             </div>
 
             <h1
