@@ -46,9 +46,9 @@ function Landing() {
 
       {/* Content */}
       <div className="relative z-10 flex h-full flex-col">
-        <section className="grid flex-1 grid-cols-1 gap-8 px-6 py-10 sm:px-10 lg:grid-cols-[52%_48%] lg:gap-10 lg:px-14 lg:py-12">
+        <section className="grid flex-1 grid-cols-1 gap-8 px-6 py-10 sm:px-10 lg:grid-cols-[minmax(0,60%)_minmax(0,40%)] lg:gap-8 lg:px-14 lg:py-12">
           {/* LEFT — all content */}
-          <div className="flex min-h-0 flex-col justify-center gap-5">
+          <div className="flex min-h-0 min-w-0 flex-col justify-center gap-5">
             <div
               className="animate-fade-up flex items-center gap-2 label-eyebrow"
               style={{ animationDelay: "180ms" }}
@@ -57,8 +57,8 @@ function Landing() {
             </div>
 
             <h1
-              className="font-display leading-[0.95] tracking-[-0.03em]"
-              style={{ fontSize: "clamp(40px, 6.2vw, 76px)" }}
+              className="font-display leading-[1.02] tracking-[-0.03em] text-balance"
+              style={{ fontSize: "clamp(36px, 4.6vw, 58px)" }}
             >
               <span
                 className="block animate-fade-up font-normal text-foreground"
