@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MoleculeCanvas } from "@/components/MoleculeCanvas";
-import { DnaHelix } from "@/components/DnaHelix";
+import { EvidenceThreads } from "@/components/EvidenceThreads";
 
 export const Route = createFileRoute("/")({
   component: Landing,
@@ -107,13 +107,13 @@ function Landing() {
             </div>
           </div>
 
-          {/* RIGHT — DNA helix */}
+          {/* RIGHT — Evidence Threads */}
           <div
             className="animate-fade-up relative w-full lg:w-[48%]"
             style={{ animationDelay: "860ms" }}
           >
-            <div className="h-[400px] w-full lg:absolute lg:inset-0 lg:h-full">
-              <DnaHelix />
+            <div className="h-[440px] w-full lg:absolute lg:inset-0 lg:h-full">
+              <EvidenceThreads />
             </div>
           </div>
         </section>
