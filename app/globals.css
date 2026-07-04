@@ -63,21 +63,6 @@ select {
   }
 }
 
-@keyframes agent-step-thinking {
-  0%,
-  100% {
-    box-shadow:
-      0 0 0 1px rgb(37 99 235 / 16%),
-      0 0 0 0 rgb(37 99 235 / 0%);
-  }
-
-  50% {
-    box-shadow:
-      0 0 0 1px rgb(37 99 235 / 32%),
-      0 0 0 4px rgb(37 99 235 / 8%);
-  }
-}
-
 .trace-card-enter {
   animation:
     trace-card-enter 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both,
@@ -96,15 +81,10 @@ select {
   transform-origin: top center;
 }
 
-.agent-step-thinking {
-  animation: agent-step-thinking 1100ms ease-in-out infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .trace-card-enter,
   .line-item-enter,
   .evidence-source-enter,
-  .agent-step-thinking,
   .trace-log-enter {
     animation: none;
   }
