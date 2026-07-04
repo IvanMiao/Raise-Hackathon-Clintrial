@@ -3,49 +3,40 @@
 @tailwind utilities;
 
 :root {
-  --background: #080c14;
-  --foreground: #f8fafc;
+  --radius: 0.5rem;
+  --cream: #f9f7f4;
+  --charcoal: #1a1a1a;
+  --forest: #2d4f3f;
+  --ghost: #eae7e2;
+  --ghost-deep: #8a8580;
+  --green-dot: #4caf50;
+
+  --background: var(--cream);
+  --foreground: var(--charcoal);
+  --border: #e8e5e0;
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Custom Scrollbars */
+/* Custom Scrollbars suited for the light cream theme */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(45, 79, 63, 0.02);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(45, 79, 63, 0.15);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
-}
-
-/* Custom Animations */
-@keyframes laser-scan {
-  0% { top: 0%; }
-  50% { top: 98%; }
-  100% { top: 0%; }
-}
-
-@keyframes path-dash {
-  to { stroke-dashoffset: -1000; }
-}
-
-.animate-laser {
-  animation: laser-scan 2.5s infinite linear;
-}
-
-.animate-dash {
-  animation: path-dash 20s linear infinite;
+  background: rgba(45, 79, 63, 0.3);
 }
