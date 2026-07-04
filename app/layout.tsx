@@ -4,8 +4,9 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "WiseGate",
-  description: "Clinical trial payment governance powered by server-side AI.",
+  title: "ClinTrial",
+  description:
+    "Read-only clinical trial payment evidence review and automation boundary governance.",
 };
 
 export default function RootLayout({

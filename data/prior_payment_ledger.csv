@@ -1,0 +1,5 @@
+payment_id,trial_id,site_id,patient_id,visit_name,item_code,matched_invoice_id,paid_date,amount_eur,status,match_key,notes
+PAY-2026-0187,CTJ301UC201,SITE-PARIS-01,P-104,Visit 3,ADMIN_FEE,INV-SITE-PARIS-2026-0038,2026-06-20,95.00,paid,CTJ301UC201|SITE-PARIS-01|P-104|Visit 3|ADMIN_FEE,Duplicate trigger for current invoice line 4.
+PAY-2026-0162,CTJ301UC201,SITE-PARIS-01,P-103,Visit 3,DISEASE_ASSESS_V3,INV-SITE-PARIS-2026-0034,2026-06-18,180.00,paid,CTJ301UC201|SITE-PARIS-01|P-103|Visit 3|DISEASE_ASSESS_V3,Historical paid assessment used as non-current ledger context.
+PAY-2026-0158,CTJ301UC201,SITE-PARIS-01,P-102,Visit 2,VISIT_FEE_V2,INV-SITE-PARIS-2026-0029,2026-06-05,450.00,paid,CTJ301UC201|SITE-PARIS-01|P-102|Visit 2|VISIT_FEE_V2,Same patient different visit; should not block Visit 3 infusion.
+PAY-2026-0141,CTJ301UC201,SITE-PARIS-01,P-101,Visit 3,SAFETY_LAB_V3,INV-SITE-PARIS-2026-0031,2026-06-09,120.00,voided,CTJ301UC201|SITE-PARIS-01|P-101|Visit 3|SAFETY_LAB_V3,Voided payment included to force status-aware duplicate checks.

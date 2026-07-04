@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600" role="img" aria-labelledby="title desc">
+  <title id="title">Mock clinical trial site invoice scan</title>
+  <desc id="desc">Synthetic invoice image for TrialGuard demo extraction.</desc>
+  <rect width="1200" height="1600" fill="#f7f7f4"/>
+  <rect x="70" y="58" width="1060" height="1480" rx="10" fill="#ffffff" stroke="#d7d7d1" stroke-width="3"/>
+  <g opacity="0.13">
+    <path d="M95 145 C240 121 340 178 505 148 C670 118 790 162 950 131 C1040 114 1102 130 1128 139" fill="none" stroke="#8a8a7e" stroke-width="2"/>
+    <path d="M82 1240 C280 1210 423 1287 610 1250 C815 1210 945 1288 1128 1248" fill="none" stroke="#8a8a7e" stroke-width="2"/>
+  </g>
+
+  <text x="104" y="132" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="700" fill="#171a1f">SITE INVOICE</text>
+  <text x="105" y="176" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#4b5563">Paris Research Center - Synthetic Trial Finance Pack</text>
+
+  <text x="104" y="248" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#171a1f">Invoice ID: INV-SITE-PARIS-2026-0042</text>
+  <text x="104" y="282" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#171a1f">Study: CTJ301UC201</text>
+  <text x="104" y="316" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#171a1f">Site: SITE-PARIS-01</text>
+  <text x="742" y="248" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#171a1f">Invoice date: 2026-06-27</text>
+  <text x="742" y="282" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#171a1f">Currency: EUR</text>
+  <text x="742" y="316" font-family="Arial, Helvetica, sans-serif" font-size="22" fill="#171a1f">Budget version: CTA-FIN-APP-A1</text>
+
+  <rect x="104" y="382" width="992" height="52" fill="#e8edf3"/>
+  <text x="124" y="416" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#171a1f">Line</text>
+  <text x="206" y="416" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#171a1f">Patient</text>
+  <text x="326" y="416" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#171a1f">Visit</text>
+  <text x="448" y="416" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#171a1f">Description from site</text>
+  <text x="912" y="416" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" fill="#171a1f">Amount</text>
+
+  <g font-family="Arial, Helvetica, sans-serif" font-size="19" fill="#171a1f">
+    <text x="124" y="484">1</text>
+    <text x="206" y="484">P-101</text>
+    <text x="326" y="484">V3 / D14</text>
+    <text x="448" y="484">Visit 3 site fee - wk2 completed</text>
+    <text x="912" y="484">EUR 450.00</text>
+
+    <text x="124" y="552">2</text>
+    <text x="206" y="552">P-102</text>
+    <text x="326" y="552">Visit 3</text>
+    <text x="448" y="552">TJ301/placebo IV infusion admin, Day 14</text>
+    <text x="912" y="552">EUR 820.00</text>
+
+    <text x="124" y="620">3</text>
+    <text x="206" y="620">P-104</text>
+    <text x="326" y="620">Visit 3</text>
+    <text x="448" y="620">PK blood draw / sample handling - V3</text>
+    <text x="912" y="620">EUR 275.00</text>
+
+    <text x="124" y="688">4</text>
+    <text x="206" y="688">P-104</text>
+    <text x="326" y="688">Visit 3</text>
+    <text x="448" y="688">Admin processing fee - visit package</text>
+    <text x="912" y="688">EUR 95.00</text>
+
+    <text x="124" y="756">5</text>
+    <text x="206" y="756">P-105</text>
+    <text x="326" y="756">V3</text>
+    <text x="448" y="756">Endoscopy w/ biopsy, disease activity check</text>
+    <text x="912" y="756">EUR 1,650.00</text>
+
+    <text x="124" y="824">6</text>
+    <text x="206" y="824">P-106</text>
+    <text x="326" y="824">n/a</text>
+    <text x="448" y="824">Remote monitoring tech fee, sponsor billable?</text>
+    <text x="912" y="824">EUR 300.00</text>
+  </g>
+
+  <line x1="104" y1="884" x2="1096" y2="884" stroke="#c8c8c2" stroke-width="2"/>
+  <text x="740" y="936" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" fill="#171a1f">Invoice total: EUR 3,590.00</text>
+
+  <text x="104" y="1028" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#4b5563">Site note: line 3 included because visit occurred during Week 2. Please verify PK subgroup status.</text>
+  <text x="104" y="1062" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#4b5563">Site note: line 5 was requested by investigator after symptoms; authorization not attached to invoice.</text>
+  <text x="104" y="1096" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#4b5563">Site note: remote monitoring added per local operations practice, no budget reference listed.</text>
+
+  <rect x="104" y="1210" width="992" height="160" fill="#fafafa" stroke="#dadad5"/>
+  <text x="132" y="1252" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#4b5563">This file is synthetic demo data. It simulates an uploaded invoice image/PDF.</text>
+  <text x="132" y="1286" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#4b5563">TrialGuard should not approve payment from this invoice. It should extract line items, retrieve evidence,</text>
+  <text x="132" y="1320" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#4b5563">classify automation boundaries, and produce a reviewer-facing audit trail.</text>
+
+  <g opacity="0.18">
+    <text x="378" y="1462" font-family="Arial, Helvetica, sans-serif" font-size="86" font-weight="700" fill="#64748b" transform="rotate(-8 378 1462)">SYNTHETIC</text>
+  </g>
+</svg>
