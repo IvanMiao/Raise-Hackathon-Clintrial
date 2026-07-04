@@ -74,7 +74,7 @@ function Landing() {
               className="animate-fade-up flex items-center gap-2 label-eyebrow"
               style={{ animationDelay: "180ms" }}
             >
-              <GreenDot /> RAISE 2026 // FINANCE · HEALTHCARE
+              <GreenDot /> RAISE 2026 // HEALTHCARE
             </div>
 
             <h1
@@ -85,19 +85,19 @@ function Landing() {
                 className="block animate-fade-up font-normal text-foreground"
                 style={{ animationDelay: "260ms" }}
               >
-                Every invoice
+                Trial sites can't heal
               </span>
               <span
                 className="block animate-fade-up italic font-normal"
                 style={{ animationDelay: "380ms", color: "var(--forest)" }}
               >
-                deserves proof
+                while waiting
               </span>
               <span
                 className="block animate-fade-up font-normal text-foreground"
                 style={{ animationDelay: "500ms" }}
               >
-                before payment.
+                to get paid.
               </span>
             </h1>
           </div>
@@ -108,13 +108,12 @@ function Landing() {
               className="animate-fade-up max-w-md text-[17px] leading-[1.7] text-muted-foreground lg:ml-auto lg:text-right"
               style={{ animationDelay: "620ms" }}
             >
-              Pharma pays clinical trial sites against{" "}
-              <span className="font-semibold text-foreground">protocols</span>,{" "}
-              <span className="font-semibold text-foreground">contracts</span>, and{" "}
-              <span className="font-semibold text-foreground">visit logs</span> — documents nobody cross-checks until the auditor arrives. ClinTrail reads them all, scores the evidence behind every line item, and tells finance what's{" "}
-              <span className="font-semibold text-foreground">safe to pay</span>, what needs a{" "}
-              <span className="font-semibold text-foreground">second look</span>, and where the{" "}
-              <span className="font-semibold text-foreground">rules don't exist yet</span>.
+              Clinical trial sites run the studies that bring new treatments to patients. But they wait{" "}
+              <span className="font-semibold text-foreground">90 to 180 days</span> to get paid — because every invoice is validated by a human reading a contract. We built the agent that reads the{" "}
+              <span className="font-semibold text-foreground">protocol</span>, the{" "}
+              <span className="font-semibold text-foreground">contract</span>, the{" "}
+              <span className="font-semibold text-foreground">visit log</span>, and the{" "}
+              <span className="font-semibold text-foreground">payment history</span> — so finance knows what's safe to pay before the auditor asks.
             </p>
 
             <div
@@ -162,9 +161,9 @@ function Landing() {
               <GreenDot /> Systems // View
             </div>
             <ul className="flex flex-wrap items-center gap-x-6 gap-y-2 label-eyebrow">
-              <li>• EVIDENCE SCORING</li>
+              <li>• PROTOCOL GROUNDED</li>
               <li>• PAYMENT GOVERNANCE</li>
-              <li>• POLICY GAP DETECTION</li>
+              <li>• AUDIT-READY</li>
             </ul>
           </div>
         </div>
