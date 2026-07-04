@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MoleculeCanvas } from "@/components/MoleculeCanvas";
 import { DnaHelix } from "@/components/DnaHelix";
+import { ParticleOverlay } from "@/components/ParticleOverlay";
 
 export const Route = createFileRoute("/")({
   component: Landing,
