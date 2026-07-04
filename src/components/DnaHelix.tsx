@@ -66,6 +66,10 @@ export function DnaHelix() {
       const turns = 3.2;
       const segments = Math.max(120, Math.floor(helixH / 4));
 
+      // Perspective
+      const focal = Math.max(520, height * 0.9);
+      const camZ = focal + radius * 2.2;
+
       type Node = {
         sx: number; sy: number;
         scale: number;
