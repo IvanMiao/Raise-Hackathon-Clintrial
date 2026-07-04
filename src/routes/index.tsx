@@ -42,30 +42,6 @@ function Landing() {
 
       {/* Content */}
       <div className="relative z-10 flex min-h-screen flex-col">
-        {/* NAV */}
-        <nav className="flex items-center justify-between px-6 py-6 sm:px-10 lg:px-14 lg:py-8">
-          <div className="animate-fade-up flex items-baseline gap-1" style={{ animationDelay: "0ms" }}>
-            <span className="font-display text-[18px] font-semibold text-foreground">ClinTrial</span>
-            <span className="text-[16px] text-muted-foreground"> /.</span>
-          </div>
-          <div
-            className="animate-fade-up flex items-center gap-8"
-            style={{ animationDelay: "80ms" }}
-          >
-            <ul className="hidden items-center gap-8 text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground md:flex">
-              <li><a href="#" className="transition-colors hover:text-foreground">About</a></li>
-              <li><a href="#" className="transition-colors hover:text-foreground">Product</a></li>
-              <li><a href="#" className="transition-colors hover:text-foreground">Research</a></li>
-            </ul>
-            <a
-              href="#"
-              className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-[11px] font-medium uppercase tracking-[0.2em] text-primary-foreground transition-transform hover:-translate-y-px"
-            >
-              Contact <span aria-hidden>↗</span>
-            </a>
-          </div>
-        </nav>
-
         {/* HERO */}
         <section className="flex flex-1 flex-col gap-14 px-6 pb-32 pt-16 sm:px-10 lg:flex-row lg:gap-10 lg:px-14 lg:pb-28 lg:pt-24">
           {/* LEFT */}
@@ -132,41 +108,9 @@ function Landing() {
               </p>
             </div>
 
-            {/* scroll indicator */}
-            <div
-              className="animate-fade-up mt-4 hidden items-center gap-3 lg:ml-auto lg:flex"
-              style={{ animationDelay: "860ms" }}
-            >
-              <span className="label-eyebrow">Scroll</span>
-              <span
-                className="flex h-6 w-6 items-center justify-center rounded-full border"
-                style={{ borderColor: "var(--ghost-deep)" }}
-              >
-                <span
-                  className="h-1 w-1 rounded-full"
-                  style={{ backgroundColor: "var(--muted-foreground)" }}
-                />
-              </span>
-            </div>
           </div>
         </section>
 
-        {/* BOTTOM BAR */}
-        <div
-          className="animate-fade-up absolute inset-x-0 bottom-0 border-t px-6 py-5 sm:px-10 lg:px-14"
-          style={{ animationDelay: "900ms", borderColor: "var(--border)" }}
-        >
-          <div className="flex flex-col items-start justify-between gap-3 md:flex-row md:items-center">
-            <div className="flex items-center gap-2 label-eyebrow">
-              <GreenDot /> Systems // View
-            </div>
-            <ul className="flex flex-wrap items-center gap-x-6 gap-y-2 label-eyebrow">
-              <li>• PROTOCOL GROUNDED</li>
-              <li>• PAYMENT GOVERNANCE</li>
-              <li>• AUDIT-READY</li>
-            </ul>
-          </div>
-        </div>
       </div>
     </main>
   );
