@@ -66,55 +66,40 @@ export function DnaHelix() {
       const turns = 3.2;
       const segments = Math.max(120, Math.floor(helixH / 4));
 
-      // Perspective
-      const focal = Math.max(520, height * 0.9);
-      const camZ = focal + radius * 2.2; // camera distance from origin along +Z
-
       type Node = {
-        sx: number; sy: number; // screen
-        scale: number;          // perspective scale (0..~1.3)
-        z: number;              // world z after rotation (larger = closer)
-        yWorld: number;         // for pulse hit-testing
-        strand: 0 | 1;
+        sx: number; sy: number;
+        scale: number;
+        z: number;
+        yWorld: number;
+        strand: number;
         idx: number;
       };
-      const nodes: Node[] = new Array(segments * 2 + 2);
+      const nodes: Node[] = new Array((segments + 1) * STRANDS);
 
       const project = (x: number, y: number, z: number) => {
-        // rotate around X for tilt
         const yr = y * cosTx - z * sinTx;
         const zr = y * sinTx + z * cosTx;
-        // camera looks down -Z; camZ in front
         const zc = camZ - zr;
         const s = focal / Math.max(1, zc);
-        return { sx: cx + x * s, sy: cy + yr * s, scale: s * (focal / camZ) * 1.0, zr };
+        return { sx: cx + x * s, sy: cy + yr * s, scale: s * (focal / camZ), zr };
       };
 
       for (let i = 0; i <= segments; i++) {
         const u = i / segments;
         const yLocal = (u - 0.5) * helixH + float;
         const theta = u * turns * Math.PI * 2 + phase;
-
-        // strand A
-        const xA = Math.cos(theta) * radius;
-        const zA = Math.sin(theta) * radius;
-        const pA = project(xA, yLocal, zA);
-        nodes[i * 2] = {
-          sx: pA.sx, sy: pA.sy, scale: pA.scale, z: pA.zr,
-          yWorld: yLocal, strand: 0, idx: i,
-        };
-
-        // strand B (opposite)
-        const xB = Math.cos(theta + Math.PI) * radius;
-        const zB = Math.sin(theta + Math.PI) * radius;
-        const pB = project(xB, yLocal, zB);
-        nodes[i * 2 + 1] = {
-          sx: pB.sx, sy: pB.sy, scale: pB.scale, z: pB.zr,
-          yWorld: yLocal, strand: 1, idx: i,
-        };
+        for (let s = 0; s < STRANDS; s++) {
+          const off = (s / STRANDS) * Math.PI * 2;
+          const x = Math.cos(theta + off) * radius;
+          const z = Math.sin(theta + off) * radius;
+          const p = project(x, yLocal, z);
+          nodes[i * STRANDS + s] = {
+            sx: p.sx, sy: p.sy, scale: p.scale, z: p.zr,
+            yWorld: yLocal, strand: s, idx: i,
+          };
+        }
       }
 
-      // Build draw items with real z for sorting
       type Item =
         | { kind: "seg"; z: number; p0: Node; p1: Node; color: string }
         | { kind: "rung"; z: number; a: Node; b: Node }
@@ -122,23 +107,24 @@ export function DnaHelix() {
 
       const items: Item[] = [];
 
-      // Strand segments
-      for (let s = 0 as 0 | 1; s <= 1; s = (s + 1) as 0 | 1) {
-        const color = s === 0 ? forest : charcoal;
+      // Strand segments (all strands)
+      for (let s = 0; s < STRANDS; s++) {
+        const color = strandColors[s];
         for (let i = 0; i < segments; i++) {
-          const p0 = nodes[i * 2 + s];
-          const p1 = nodes[(i + 1) * 2 + s];
+          const p0 = nodes[i * STRANDS + s];
+          const p1 = nodes[(i + 1) * STRANDS + s];
           items.push({ kind: "seg", z: (p0.z + p1.z) / 2, p0, p1, color });
         }
-        if (s === 1) break;
       }
 
-      // Rungs every N
+      // Rungs: connect adjacent strands around the ring (0-1, 1-2, ..., last-0)
       const rungStep = 4;
       for (let i = 0; i <= segments; i += rungStep) {
-        const a = nodes[i * 2];
-        const b = nodes[i * 2 + 1];
-        items.push({ kind: "rung", z: (a.z + b.z) / 2, a, b });
+        for (let s = 0; s < STRANDS; s++) {
+          const a = nodes[i * STRANDS + s];
+          const b = nodes[i * STRANDS + ((s + 1) % STRANDS)];
+          items.push({ kind: "rung", z: (a.z + b.z) / 2, a, b });
+        }
       }
 
       // Update pulses
@@ -152,10 +138,10 @@ export function DnaHelix() {
       }
       const pulseYs = pulses.map((p) => (0.5 - p.progress) * helixH + float);
 
-      // Node markers at rung endpoints
+      // Node markers at rung endpoints (all strands)
       for (let i = 0; i <= segments; i += rungStep) {
-        for (const s of [0, 1] as const) {
-          const p = nodes[i * 2 + s];
+        for (let s = 0; s < STRANDS; s++) {
+          const p = nodes[i * STRANDS + s];
           let pulseBoost = 0;
           for (const py of pulseYs) {
             const dy = Math.abs(p.yWorld - py);
