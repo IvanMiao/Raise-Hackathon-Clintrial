@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { ChangeEvent } from 'react';
 import { 
   ShieldCheck, 
   AlertTriangle, 
@@ -24,7 +25,260 @@ import {
   Clock
 } from 'lucide-react';
 import { INITIAL_ITEMS, INITIAL_TRAIL } from './trialData';
-import type { AuditTrailEntry, TrialItem } from './trialTypes';
+import type { AuditTrailEntry, EvidenceItem, TrialItem } from './trialTypes';
+import type {
+  AgentEvent,
+  AgentReviewMode,
+  AgentReviewResult,
+  BoundaryRecommendation,
+  EvidenceCard,
+  EvidenceSource,
+  InvoiceLine,
+} from '@/lib/agent/types';
+
+type AgentRunStatus = 'idle' | 'running' | 'done' | 'failed';
+
+type AgentStreamReadResult = {
+  result: AgentReviewResult | null;
+  errorMessage: string | null;
+};
+
+const agentReviewMode: AgentReviewMode = 'demo';
+const acceptedInvoiceFileTypes = [
+  'image/svg+xml',
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'application/pdf',
+].join(',');
+const maxImageUploadSizeBytes = 5 * 1024 * 1024;
+const maxPdfUploadSizeBytes = 10 * 1024 * 1024;
+
+const agentStatusStyles: Record<AgentRunStatus, string> = {
+  idle: 'text-slate-600 bg-slate-100 border-slate-200',
+  running: 'text-blue-700 bg-blue-50 border-blue-200',
+  done: 'text-teal-700 bg-teal-50 border-teal-200',
+  failed: 'text-rose-600 bg-rose-50 border-rose-200',
+};
+
+const evidenceSourceToUiSource: Record<EvidenceSource, string> = {
+  protocol: 'protocol',
+  cta_budget: 'contract',
+  coverage_grid: 'contract',
+  site_evidence: 'edc',
+  prior_ledger: 'edc',
+  invoice_extraction: 'edc',
+};
+
+const boundaryLabels: Record<BoundaryRecommendation['boundary'], string> = {
+  'Auto-handle candidate': 'Auto-clear candidate',
+  'AI recommend + finance confirm': 'Finance confirm',
+  'Human review required': 'Human review',
+  'Policy or contract gap': 'Policy gap',
+};
+
+function compactText(value: string, maxLength: number): string {
+  const compacted = value.replace(/\s+/g, ' ').trim();
+
+  if (compacted.length <= maxLength) {
+    return compacted;
+  }
+
+  return `${compacted.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
+function normalizeErrorPayload(payload: unknown): string {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'error' in payload &&
+    typeof payload.error === 'string'
+  ) {
+    return payload.error;
+  }
+
+  return 'Agent review request failed.';
+}
+
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+}
+
+function invoiceUploadError(file: File): string | null {
+  if (file.type.startsWith('image/') && file.size > maxImageUploadSizeBytes) {
+    return 'Image invoice files must be 5 MB or smaller.';
+  }
+
+  if (file.type === 'application/pdf' && file.size > maxPdfUploadSizeBytes) {
+    return 'PDF invoice files must be 10 MB or smaller.';
+  }
+
+  return null;
+}
+
+function formatInvoiceAmount(amount: string): string {
+  const compacted = amount.trim();
+
+  if (/^[€$£]/.test(compacted)) {
+    return compacted;
+  }
+
+  return `$${compacted}`;
+}
+
+function displayLineId(line: InvoiceLine): string {
+  return `LI-${String(line.lineNumber).padStart(4, '0')}`;
+}
+
+function evidenceVerdict(status: EvidenceCard['status']): EvidenceItem['verdict'] {
+  if (status === 'matched') {
+    return 'match';
+  }
+
+  if (status === 'blocked') {
+    return 'conflict';
+  }
+
+  if (status === 'partial' || status === 'missing') {
+    return 'warn';
+  }
+
+  return 'info';
+}
+
+function evidenceReference(evidence: EvidenceCard): string {
+  if (!evidence.locator) {
+    return evidence.sourceName;
+  }
+
+  return `${evidence.sourceName} · ${compactText(evidence.locator, 80)}`;
+}
+
+function mapEvidenceCard(evidence: EvidenceCard): EvidenceItem {
+  return {
+    src: evidenceSourceToUiSource[evidence.sourceType] ?? evidence.sourceType,
+    ref: evidenceReference(evidence),
+    verdict: evidenceVerdict(evidence.status),
+    text: evidence.excerpt || evidence.finding,
+    ai: evidence.finding,
+  };
+}
+
+function recommendationStatus(recommendation: BoundaryRecommendation | undefined) {
+  if (!recommendation) {
+    return 'pending';
+  }
+
+  if (recommendation.evidence.some((evidence) => evidence.status === 'blocked')) {
+    return 'block';
+  }
+
+  if (recommendation.boundary === 'Auto-handle candidate') {
+    return 'pass';
+  }
+
+  if (recommendation.boundary === 'Policy or contract gap') {
+    return 'block';
+  }
+
+  if (recommendation.boundary === 'Human review required') {
+    return 'flag';
+  }
+
+  return 'review';
+}
+
+function recommendationBand(status: TrialItem['status'], score: number) {
+  if (status === 'pass' && score >= 85) {
+    return 'clear';
+  }
+
+  if (status === 'block') {
+    return 'hold';
+  }
+
+  return 'review';
+}
+
+function averageConfidence(line: InvoiceLine, evidence: EvidenceCard[]): number {
+  const values = [line.extractionConfidence, ...evidence.map((item) => item.confidence)]
+    .filter((value) => Number.isFinite(value));
+
+  if (values.length === 0) {
+    return 0;
+  }
+
+  return Math.round(
+    (values.reduce((total, value) => total + value, 0) / values.length) * 100,
+  );
+}
+
+function mapAgentResultToItems(result: AgentReviewResult): TrialItem[] {
+  return result.extractedLines.map((line) => {
+    const recommendation = result.recommendationsByLineId?.[line.id];
+    const evidence = result.evidenceByLineId?.[line.id] ?? recommendation?.evidence ?? [];
+    const status = recommendationStatus(recommendation);
+    const score = recommendation ? Math.round(recommendation.score * 100) : 0;
+    const candidateCode =
+      result.retrievalPlans?.[line.id]?.candidateItemCodes[0] ?? 'Agent extracted';
+    const riskFlags = recommendation?.riskFlags ?? [];
+    const summary =
+      recommendation?.decisionReason ??
+      'Backend agent extracted this invoice line and is preparing evidence review.';
+    const mappedEvidence = evidence.map(mapEvidenceCard);
+
+    return {
+      id: displayLineId(line),
+      amount: formatInvoiceAmount(line.amount),
+      desc: line.rawDescription,
+      meta: `${line.patientId} · ${line.visitName} · ${result.uploadedInvoice.fileName}`,
+      cat: candidateCode,
+      status,
+      complianceScore: score,
+      aiConfidence: averageConfidence(line, evidence),
+      band: recommendationBand(status, score),
+      summary,
+      gcpRules:
+        riskFlags.length > 0
+          ? riskFlags
+          : ['Read-only evidence packet', 'GCP / finance control'],
+      rec: recommendation
+        ? `${boundaryLabels[recommendation.boundary]} — ${recommendation.decisionReason}`
+        : 'Awaiting deterministic boundary evaluation.',
+      evidence:
+        mappedEvidence.length > 0
+          ? mappedEvidence
+          : [
+              {
+                src: 'edc',
+                ref: `${result.uploadedInvoice.fileName} · extracted line ${line.lineNumber}`,
+                verdict: 'info',
+                text: line.rawDescription,
+                ai: `Invoice extraction confidence ${(line.extractionConfidence * 100).toFixed(0)}%.`,
+              },
+            ],
+    };
+  });
+}
+
+function auditEntryFromAgentResult(result: AgentReviewResult): AuditTrailEntry {
+  const completedAt = new Date(result.completedAt);
+  const dateLabel = Number.isNaN(completedAt.getTime())
+    ? new Date().toISOString().slice(0, 16).replace('T', ' ')
+    : completedAt.toISOString().slice(0, 16).replace('T', ' ');
+
+  return {
+    time: `${dateLabel} UTC`,
+    auditor: 'System · Backend Agent',
+    item: result.runId.slice(0, 8),
+    action: 'Reviewed',
+    actionColor: '#0f766e',
+    actionBg: '#f0fdfa',
+    justification: `Read-only backend workflow completed for ${result.uploadedInvoice.fileName}; ${result.extractedLines.length} line items mapped into the workspace.`,
+  };
+}
 
 export function ClinTrialWorkspace() {
   // App States
@@ -39,6 +293,20 @@ export function ClinTrialWorkspace() {
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [evidenceExpanded, setEvidenceExpanded] = useState<boolean>(false);
   const [showGaugeTooltip, setShowGaugeTooltip] = useState<boolean>(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [agentStatus, setAgentStatus] = useState<AgentRunStatus>('idle');
+  const [agentMessage, setAgentMessage] = useState<string>(
+    'Upload an invoice to run backend review.',
+  );
+  const [agentError, setAgentError] = useState<string | null>(null);
+  const [lastRunId, setLastRunId] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   // Selection helper to auto-reset evidence accordion state
   const handleSelectItem = (id: string) => {
@@ -48,9 +316,9 @@ export function ClinTrialWorkspace() {
 
   // Categories list derived from items
   const categories = useMemo(() => {
-    const cats = new Set(INITIAL_ITEMS.map((item) => item.cat));
+    const cats = new Set(items.map((item) => item.cat));
     return ['All', ...Array.from(cats)];
-  }, []);
+  }, [items]);
 
   // Filter and search items
   const filteredItems = useMemo(() => {
@@ -201,10 +469,247 @@ export function ClinTrialWorkspace() {
   // Navigation Items
   const selMeta = getStatusMeta(selectedItem.status);
   const selBand = getBandMeta(selectedItem.band);
+  const agentStatusStyle = agentStatusStyles[agentStatus];
+  const isAgentRunning = agentStatus === 'running';
+  const selectedFileError = selectedFile ? invoiceUploadError(selectedFile) : null;
+  const canRunAgent = selectedFile !== null && selectedFileError === null && !isAgentRunning;
 
   // Split audit trail for rendering
   const latestTrail = trail[0];
   const restTrail = trail.slice(1);
+
+  function applyAgentResult(result: AgentReviewResult): void {
+    const nextItems = mapAgentResultToItems(result);
+
+    if (nextItems.length > 0) {
+      setItems(nextItems);
+      setSelectedId(nextItems[0].id);
+      setSelectedCategory('All');
+      setSearchQuery('');
+      setEvidenceExpanded(true);
+    }
+
+    setTrail((prevTrail) => [auditEntryFromAgentResult(result), ...prevTrail]);
+    setLastRunId(result.runId);
+    setAgentStatus('done');
+    setAgentError(null);
+    setAgentMessage(
+      `Backend workflow completed · ${result.extractedLines.length} lines mapped`,
+    );
+  }
+
+  function handleAgentEvent(event: AgentEvent): AgentReviewResult | null {
+    if (event.type === 'started') {
+      setLastRunId(event.runId);
+      setAgentMessage(`Backend workflow started · ${event.runId.slice(0, 8)}`);
+      return null;
+    }
+
+    if (event.type === 'trace_update') {
+      setAgentMessage(event.headline);
+      return null;
+    }
+
+    if (event.type === 'extraction') {
+      setAgentMessage(`Extracted ${event.lines.length} invoice lines.`);
+      return null;
+    }
+
+    if (event.type === 'retrieval_plan') {
+      setAgentMessage(`Retrieval plan ready for ${event.lineId}.`);
+      return null;
+    }
+
+    if (event.type === 'evidence') {
+      setAgentMessage(`Ranked ${event.evidence.length} evidence cards for ${event.lineId}.`);
+      return null;
+    }
+
+    if (event.type === 'decision') {
+      setAgentMessage(`${event.lineId}: ${event.recommendation.boundary}.`);
+      return null;
+    }
+
+    if (event.type === 'summary') {
+      setAgentMessage(event.text);
+      return null;
+    }
+
+    if (event.type === 'error') {
+      setAgentStatus('failed');
+      setAgentError(event.message);
+      setAgentMessage(event.message);
+      return null;
+    }
+
+    if (event.type === 'complete') {
+      applyAgentResult(event.result);
+      return event.result;
+    }
+
+    return null;
+  }
+
+  async function readAgentStream(response: Response): Promise<AgentStreamReadResult> {
+    if (!response.body) {
+      throw new Error('Agent review stream was empty.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let completeResult: AgentReviewResult | null = null;
+    let streamError: string | null = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+
+        if (trimmedLine.length === 0) {
+          continue;
+        }
+
+        const event = JSON.parse(trimmedLine) as AgentEvent;
+
+        if (event.type === 'error') {
+          streamError = event.message;
+        }
+
+        completeResult = handleAgentEvent(event) ?? completeResult;
+        await yieldToBrowser();
+      }
+
+      if (done) {
+        break;
+      }
+    }
+
+    const finalLine = buffer.trim();
+
+    if (finalLine.length > 0) {
+      const event = JSON.parse(finalLine) as AgentEvent;
+
+      if (event.type === 'error') {
+        streamError = event.message;
+      }
+
+      completeResult = handleAgentEvent(event) ?? completeResult;
+      await yieldToBrowser();
+    }
+
+    return {
+      result: completeResult,
+      errorMessage: streamError,
+    };
+  }
+
+  function handleInvoiceFileChange(event: ChangeEvent<HTMLInputElement>): void {
+    const file = event.target.files?.[0] ?? null;
+    setSelectedFile(file);
+    setAgentError(null);
+
+    if (file) {
+      const sizeError = invoiceUploadError(file);
+
+      if (sizeError) {
+        setAgentStatus('failed');
+        setAgentError(sizeError);
+        setAgentMessage(sizeError);
+      } else {
+        setAgentStatus('idle');
+        setAgentMessage(`${file.name} ready for backend review.`);
+      }
+    } else {
+      setAgentStatus('idle');
+      setAgentMessage('Upload an invoice to run backend review.');
+    }
+  }
+
+  async function startBackendReview(): Promise<void> {
+    if (!selectedFile) {
+      setAgentStatus('failed');
+      setAgentError('Choose an invoice file before running review.');
+      setAgentMessage('Choose an invoice file before running review.');
+      return;
+    }
+
+    const sizeError = invoiceUploadError(selectedFile);
+
+    if (sizeError) {
+      setAgentStatus('failed');
+      setAgentError(sizeError);
+      setAgentMessage(sizeError);
+      return;
+    }
+
+    abortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    setAgentStatus('running');
+    setAgentError(null);
+    setLastRunId(null);
+    setAgentMessage(`Uploading ${selectedFile.name} to backend workflow.`);
+
+    const formData = new FormData();
+    formData.append('invoice', selectedFile);
+    formData.append('mode', agentReviewMode);
+
+    try {
+      const response = await fetch('/api/agent-review', {
+        method: 'POST',
+        body: formData,
+        signal: abortController.signal,
+      });
+
+      if (!response.ok) {
+        let payload: unknown = null;
+
+        try {
+          payload = await response.json();
+        } catch {
+          payload = null;
+        }
+
+        throw new Error(normalizeErrorPayload(payload));
+      }
+
+      const streamResult = await readAgentStream(response);
+
+      if (streamResult.errorMessage) {
+        throw new Error(streamResult.errorMessage);
+      }
+
+      if (!streamResult.result) {
+        throw new Error('Backend workflow ended without a completion event.');
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        setAgentStatus('failed');
+        setAgentError('Backend review was canceled.');
+        setAgentMessage('Backend review was canceled.');
+        return;
+      }
+
+      const message =
+        error instanceof Error ? error.message : 'Agent review request failed.';
+      setAgentStatus('failed');
+      setAgentError(message);
+      setAgentMessage(message);
+    } finally {
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
+    }
+  }
+
+  function cancelBackendReview(): void {
+    abortControllerRef.current?.abort();
+  }
 
   // Dynamic values for decision option buttons
   const getDecisionOptionStyle = (v: string, label: string) => {
@@ -262,19 +767,79 @@ export function ClinTrialWorkspace() {
             </span>
           </div>
           
-          <div className="flex items-center gap-4">
-            <div className={`flex items-center gap-2 font-mono text-[11px] px-3 py-1 border transition-all duration-200 rounded ${
-              riskCount > 0 
-                ? 'text-rose-600 bg-rose-50/50 border-rose-500' 
-                : 'text-teal-700 bg-teal-50/50 border-teal-500/30'
-            }`}>
-              <span className={`w-2 h-2 rounded-full animate-pulse ${riskCount > 0 ? 'bg-rose-500' : 'bg-teal-600'}`}></span>
-              {riskCount > 0 ? `${riskCount} items need decision` : 'All items cleared'}
+          <form
+            className="flex items-center justify-end gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void startBackendReview();
+            }}
+          >
+            <div className={`hidden lg:flex items-center gap-2 font-mono text-[11px] px-3 py-2 border transition-all duration-200 rounded ${agentStatusStyle}`}>
+              {agentStatus === 'failed' ? (
+                <AlertCircle className="w-3.5 h-3.5" />
+              ) : agentStatus === 'done' ? (
+                <CheckCircle2 className="w-3.5 h-3.5" />
+              ) : (
+                <span className={`w-2 h-2 rounded-full ${isAgentRunning ? 'animate-pulse bg-blue-500' : riskCount > 0 ? 'bg-rose-500' : 'bg-teal-600'}`}></span>
+              )}
+              {isAgentRunning
+                ? 'Backend running'
+                : agentStatus === 'done'
+                  ? 'Backend complete'
+                  : agentStatus === 'failed'
+                    ? 'Backend issue'
+                    : riskCount > 0
+                      ? `${riskCount} items need decision`
+                      : 'All items cleared'}
             </div>
+
+            <label
+              className={`min-h-11 cursor-pointer flex items-center gap-2 rounded border px-3 text-[11px] font-bold transition-all duration-150 active:scale-95 ${
+                isAgentRunning
+                  ? 'pointer-events-none border-slate-200 bg-slate-100 text-slate-400'
+                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+              }`}
+              htmlFor="invoice-upload"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              {selectedFile ? 'Replace invoice' : 'Upload invoice'}
+            </label>
+            <input
+              accept={acceptedInvoiceFileTypes}
+              className="sr-only"
+              disabled={isAgentRunning}
+              id="invoice-upload"
+              onChange={handleInvoiceFileChange}
+              type="file"
+            />
+
+            <button
+              className={`min-h-11 rounded px-3 text-[11px] font-bold transition-all duration-150 active:scale-95 ${
+                canRunAgent
+                  ? 'cursor-pointer bg-[#0f766e] text-white hover:bg-teal-800'
+                  : 'cursor-not-allowed bg-slate-200 text-slate-500'
+              }`}
+              disabled={!canRunAgent}
+              type="submit"
+            >
+              {isAgentRunning ? 'Running...' : 'Run review'}
+            </button>
+
+            {isAgentRunning && (
+              <button
+                aria-label="Cancel backend review"
+                className="min-h-11 min-w-11 cursor-pointer rounded border border-slate-300 bg-white px-3 text-slate-500 transition-all duration-150 hover:bg-slate-50 hover:text-slate-800 active:scale-95"
+                onClick={cancelBackendReview}
+                type="button"
+              >
+                <X className="mx-auto h-3.5 w-3.5" />
+              </button>
+            )}
+
             <div className="w-8 h-8 rounded bg-[#0f766e] text-white flex items-center justify-center font-bold text-xs select-none">
               EV
             </div>
-          </div>
+          </form>
         </div>
 
         {/* Protocol Metadata Subheader */}
@@ -296,9 +861,22 @@ export function ClinTrialWorkspace() {
             <ChevronDown className="w-3 h-3 text-slate-400 stroke-[2.5]" />
           </div>
 
-          <div className="ml-auto hidden md:flex items-center gap-1.5 font-mono text-[10px] tracking-wider text-slate-600 bg-slate-200/60 px-2.5 py-1 rounded">
-            <span className="w-1.5 h-1.5 rounded-full bg-teal-700"></span>
-            GCP · 21 CFR PART 11
+          <div className="ml-auto flex items-center gap-2">
+            <span
+              className={`font-mono text-[10px] font-semibold tracking-wider px-2.5 py-1 rounded border ${agentError ? 'text-rose-600 bg-rose-50 border-rose-200' : 'text-slate-600 bg-white border-slate-200'}`}
+              role={agentError ? 'alert' : undefined}
+            >
+              {selectedFile ? compactText(selectedFile.name, 34) : 'No invoice uploaded'}
+              {lastRunId ? ` · ${lastRunId.slice(0, 8)}` : ''}
+            </span>
+            <span className={`hidden md:inline-flex items-center gap-1.5 font-mono text-[10px] tracking-wider px-2.5 py-1 rounded border ${agentStatusStyle}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isAgentRunning ? 'animate-pulse bg-blue-500' : agentStatus === 'failed' ? 'bg-rose-500' : 'bg-teal-700'}`}></span>
+              {compactText(agentMessage, 76)}
+            </span>
+            <div className="hidden md:flex items-center gap-1.5 font-mono text-[10px] tracking-wider text-slate-600 bg-slate-200/60 px-2.5 py-1 rounded">
+              <span className="w-1.5 h-1.5 rounded-full bg-teal-700"></span>
+              GCP · 21 CFR PART 11
+            </div>
           </div>
         </div>
       </header>
@@ -518,7 +1096,7 @@ export function ClinTrialWorkspace() {
                   {selBand.label}
                 </span>
                 <span className="ml-auto font-mono text-[10px] text-slate-400 font-semibold">
-                  4 sources analyzed
+                  {selectedItem.evidence.length} sources analyzed
                 </span>
               </div>
               <div className="text-[13.5px] text-slate-800 leading-relaxed font-medium">
