@@ -50,6 +50,14 @@ type SavedAgentTrace = {
   entries: AgentTraceEntry[];
 };
 
+type AgentLineItemInput = {
+  uploadedFileName: string;
+  candidateCode?: string;
+  evidence?: EvidenceCard[];
+  recommendation?: BoundaryRecommendation;
+  includeExtractionEvidenceFallback?: boolean;
+};
+
 const agentReviewMode: AgentReviewMode = 'demo';
 const acceptedInvoiceFileTypes = [
   'image/svg+xml',
@@ -317,52 +325,71 @@ function averageConfidence(line: InvoiceLine, evidence: EvidenceCard[]): number 
   );
 }
 
-function mapAgentResultToItems(result: AgentReviewResult): TrialItem[] {
-  return result.extractedLines.map((line) => {
-    const recommendation = result.recommendationsByLineId?.[line.id];
-    const evidence = result.evidenceByLineId?.[line.id] ?? recommendation?.evidence ?? [];
-    const status = recommendationStatus(recommendation);
-    const score = recommendation ? Math.round(recommendation.score * 100) : 0;
-    const candidateCode =
-      result.retrievalPlans?.[line.id]?.candidateItemCodes[0] ?? 'Agent extracted';
-    const riskFlags = recommendation?.riskFlags ?? [];
-    const summary =
-      recommendation?.decisionReason ??
-      'Backend agent extracted this invoice line and is preparing evidence review.';
-    const mappedEvidence = evidence.map(mapEvidenceCard);
+function mapInvoiceLineToTrialItem(
+  line: InvoiceLine,
+  input: AgentLineItemInput,
+): TrialItem {
+  const evidence = input.evidence ?? input.recommendation?.evidence ?? [];
+  const status = recommendationStatus(input.recommendation);
+  const score = input.recommendation
+    ? Math.round(input.recommendation.score * 100)
+    : 0;
+  const riskFlags = input.recommendation?.riskFlags ?? [];
+  const mappedEvidence = evidence.map(mapEvidenceCard);
+  const shouldUseExtractionFallback =
+    input.includeExtractionEvidenceFallback === true && mappedEvidence.length === 0;
+  const extractionEvidence: EvidenceItem[] = [
+    {
+      src: 'edc',
+      ref: `${input.uploadedFileName} · extracted line ${line.lineNumber}`,
+      verdict: 'info',
+      text: line.rawDescription,
+      ai: `Invoice extraction confidence ${(line.extractionConfidence * 100).toFixed(0)}%.`,
+    },
+  ];
+  const evidenceItems = shouldUseExtractionFallback
+    ? extractionEvidence
+    : mappedEvidence;
 
-    return {
-      id: displayLineId(line),
-      amount: formatInvoiceAmount(line.amount),
-      desc: line.rawDescription,
-      meta: `${line.patientId} · ${line.visitName} · ${result.uploadedInvoice.fileName}`,
-      cat: candidateCode,
-      status,
-      complianceScore: score,
-      aiConfidence: averageConfidence(line, evidence),
-      band: recommendationBand(status, score),
-      summary,
-      gcpRules:
-        riskFlags.length > 0
-          ? riskFlags
-          : ['Read-only evidence packet', 'GCP / finance control'],
-      rec: recommendation
-        ? `${boundaryLabels[recommendation.boundary]} — ${recommendation.decisionReason}`
-        : 'Awaiting deterministic boundary evaluation.',
-      evidence:
-        mappedEvidence.length > 0
-          ? mappedEvidence
-          : [
-              {
-                src: 'edc',
-                ref: `${result.uploadedInvoice.fileName} · extracted line ${line.lineNumber}`,
-                verdict: 'info',
-                text: line.rawDescription,
-                ai: `Invoice extraction confidence ${(line.extractionConfidence * 100).toFixed(0)}%.`,
-              },
-            ],
-    };
-  });
+  return {
+    id: displayLineId(line),
+    amount: formatInvoiceAmount(line.amount),
+    desc: line.rawDescription,
+    meta: `${line.patientId} · ${line.visitName} · ${input.uploadedFileName}`,
+    cat: input.candidateCode ?? 'Agent extracted',
+    status,
+    complianceScore: score,
+    aiConfidence: averageConfidence(line, evidence),
+    band: recommendationBand(status, score),
+    summary:
+      input.recommendation?.decisionReason ??
+      (mappedEvidence.length > 0
+        ? 'Evidence sources are being ranked while boundary evaluation continues.'
+        : 'Invoice line extracted. Agent is searching evidence sources.'),
+    gcpRules:
+      riskFlags.length > 0
+        ? riskFlags
+        : mappedEvidence.length > 0
+          ? ['Evidence search in progress', 'Boundary pending']
+          : ['Invoice extraction complete', 'Evidence search pending'],
+    rec: input.recommendation
+      ? `${boundaryLabels[input.recommendation.boundary]} — ${input.recommendation.decisionReason}`
+      : 'Awaiting deterministic boundary evaluation.',
+    evidence: evidenceItems,
+  };
+}
+
+function mapAgentResultToItems(result: AgentReviewResult): TrialItem[] {
+  return result.extractedLines.map((line) => (
+    mapInvoiceLineToTrialItem(line, {
+      uploadedFileName: result.uploadedInvoice.fileName,
+      candidateCode:
+        result.retrievalPlans?.[line.id]?.candidateItemCodes[0] ?? undefined,
+      evidence: result.evidenceByLineId?.[line.id],
+      recommendation: result.recommendationsByLineId?.[line.id],
+      includeExtractionEvidenceFallback: true,
+    })
+  ));
 }
 
 function auditEntryFromAgentResult(result: AgentReviewResult): AuditTrailEntry {
@@ -417,6 +444,7 @@ export function ClinTrialWorkspace() {
   const [agentError, setAgentError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const revealTimersRef = useRef<number[]>([]);
+  const invoiceLineByIdRef = useRef<Map<string, InvoiceLine>>(new Map());
 
   useEffect(() => {
     return () => {
@@ -608,6 +636,28 @@ export function ClinTrialWorkspace() {
   // Navigation Items
   const selMeta = selectedItem ? getStatusMeta(selectedItem.status) : getStatusMeta('pending');
   const selBand = selectedItem ? getBandMeta(selectedItem.band) : getBandMeta('review');
+  const selectedEvidenceReady = prioritizedEvidence.length > 0;
+  const selectedBoundaryReady = selectedItem !== null && selectedItem.status !== 'pending';
+  const evidenceHeroTone = !selectedBoundaryReady
+    ? {
+        card: 'bg-blue-50/40 border-blue-100 border-l-blue-500',
+        badge: 'bg-blue-600',
+        text: 'text-blue-700',
+        label: 'Evidence ranking in progress',
+      }
+    : selectedItem && selectedItem.complianceScore < 85
+      ? {
+          card: 'bg-rose-50/40 border-rose-200 border-l-rose-600',
+          badge: 'bg-rose-600',
+          text: 'text-rose-600',
+          label: selBand.label,
+        }
+      : {
+          card: 'bg-teal-50/40 border-teal-200 border-l-teal-600',
+          badge: 'bg-teal-700',
+          text: 'text-teal-700',
+          label: selBand.label,
+        };
   const agentStatusStyle = agentStatusStyles[agentStatus];
   const isAgentRunning = agentStatus === 'running';
   const selectedFileError = selectedFile ? invoiceUploadError(selectedFile) : null;
@@ -616,6 +666,10 @@ export function ClinTrialWorkspace() {
   const agentTraceRunLabel = agentTraceSnapshot
     ? `${agentTraceSnapshot.runId.slice(0, 8)} · ${compactText(agentTraceSnapshot.uploadedFileName, 28)}`
     : 'No saved run';
+
+  function currentUploadedFileName(): string {
+    return selectedFile?.name ?? agentTraceSnapshot?.uploadedFileName ?? 'Uploaded invoice';
+  }
 
   function clearItemRevealTimers(): void {
     revealTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
@@ -636,16 +690,101 @@ export function ClinTrialWorkspace() {
     }
   }
 
+  function applyExtractedLines(lines: InvoiceLine[]): void {
+    invoiceLineByIdRef.current = new Map(lines.map((line) => [line.id, line]));
+    const uploadedFileName = currentUploadedFileName();
+    const nextItems = lines.map((line) => (
+      mapInvoiceLineToTrialItem(line, {
+        uploadedFileName,
+        includeExtractionEvidenceFallback: false,
+      })
+    ));
+
+    setItems(nextItems);
+    setSelectedId((currentSelectedId) => {
+      if (currentSelectedId && nextItems.some((item) => item.id === currentSelectedId)) {
+        return currentSelectedId;
+      }
+
+      return nextItems[0]?.id ?? null;
+    });
+    setSelectedCategory('All');
+    setSearchQuery('');
+    setEvidenceExpanded(false);
+    revealAgentItems(nextItems);
+  }
+
+  function updateAgentLineItem(
+    lineId: string,
+    update: {
+      candidateCode?: string;
+      evidence?: EvidenceCard[];
+      recommendation?: BoundaryRecommendation;
+      expandEvidence?: boolean;
+    },
+  ): void {
+    const line = invoiceLineByIdRef.current.get(lineId);
+
+    if (!line) {
+      return;
+    }
+
+    const uiLineId = displayLineId(line);
+    const uploadedFileName = currentUploadedFileName();
+
+    setItems((currentItems) => currentItems.map((item) => {
+      if (item.id !== uiLineId) {
+        return item;
+      }
+
+      if (update.evidence === undefined && update.recommendation === undefined) {
+        return {
+          ...item,
+          cat: update.candidateCode ?? item.cat,
+        };
+      }
+
+      return mapInvoiceLineToTrialItem(line, {
+        uploadedFileName,
+        candidateCode: update.candidateCode ?? item.cat,
+        evidence: update.evidence,
+        recommendation: update.recommendation,
+        includeExtractionEvidenceFallback: false,
+      });
+    }));
+
+    setResultSequenceKey((currentKey) => currentKey + 1);
+
+    if (update.expandEvidence) {
+      setEvidenceExpanded((isExpanded) => {
+        if (selectedId !== null && selectedId !== uiLineId) {
+          return isExpanded;
+        }
+
+        return true;
+      });
+    }
+  }
+
   function applyAgentResult(result: AgentReviewResult): void {
     const nextItems = mapAgentResultToItems(result);
     const nextTraceSnapshot = savedTraceFromAgentResult(result);
 
     setItems(nextItems);
+    invoiceLineByIdRef.current = new Map(
+      result.extractedLines.map((line) => [line.id, line]),
+    );
     setAgentTraceSnapshot(nextTraceSnapshot);
     persistSavedAgentTrace(nextTraceSnapshot);
 
     if (nextItems.length > 0) {
-      setSelectedId(nextItems[0].id);
+      setSelectedId((currentSelectedId) => {
+        if (currentSelectedId && nextItems.some((item) => item.id === currentSelectedId)) {
+          return currentSelectedId;
+        }
+
+        return nextItems[0].id;
+      });
       setSelectedCategory('All');
       setSearchQuery('');
       setEvidenceExpanded(true);
@@ -684,21 +823,39 @@ export function ClinTrialWorkspace() {
     }
 
     if (event.type === 'extraction') {
+      applyExtractedLines(event.lines);
       setAgentMessage(`Extracted ${event.lines.length} invoice lines.`);
       return null;
     }
 
     if (event.type === 'retrieval_plan') {
+      updateAgentLineItem(event.lineId, {
+        candidateCode: event.plan.candidateItemCodes[0] ?? 'Agent extracted',
+      });
       setAgentMessage(`Retrieval plan ready for ${event.lineId}.`);
       return null;
     }
 
+    if (event.type === 'search') {
+      setAgentMessage(`Searching ${event.sources.length} sources for ${event.lineId}.`);
+      return null;
+    }
+
     if (event.type === 'evidence') {
+      updateAgentLineItem(event.lineId, {
+        evidence: event.evidence,
+        expandEvidence: true,
+      });
       setAgentMessage(`Ranked ${event.evidence.length} evidence cards for ${event.lineId}.`);
       return null;
     }
 
     if (event.type === 'decision') {
+      updateAgentLineItem(event.lineId, {
+        evidence: event.recommendation.evidence,
+        recommendation: event.recommendation,
+        expandEvidence: true,
+      });
       setAgentMessage(`${event.lineId}: ${event.recommendation.boundary}.`);
       return null;
     }
@@ -824,6 +981,7 @@ export function ClinTrialWorkspace() {
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
     clearItemRevealTimers();
+    invoiceLineByIdRef.current = new Map();
     setItems([]);
     setSelectedId(null);
     setSelectedCategory('All');
@@ -1267,28 +1425,21 @@ export function ClinTrialWorkspace() {
           {/* Scrollable Evidence Area */}
           <div className="flex-1 overflow-y-auto min-h-0 p-5">
             {selectedItem ? (
-              <>
+              selectedEvidenceReady ? (
+                <>
             
             {/* AI SYNTHESIS HERO CARD */}
             <div 
-              className={`border border-l-4 p-4 mb-5 transition-all duration-200 rounded shadow-sm ${
-                selectedItem.complianceScore < 85
-                  ? 'bg-rose-50/40 border-rose-200 border-l-rose-600'
-                  : 'bg-teal-50/40 border-teal-200 border-l-teal-600'
-              }`}
+              className={`border border-l-4 p-4 mb-5 transition-all duration-200 rounded shadow-sm ${evidenceHeroTone.card}`}
             >
               <div className="flex items-center gap-2.5 mb-2.5">
                 <span 
-                  className={`font-mono text-[9.5px] font-bold tracking-widest text-white px-2 py-0.5 rounded-sm ${
-                    selectedItem.complianceScore < 85 ? 'bg-rose-600' : 'bg-teal-700'
-                  }`}
+                  className={`font-mono text-[9.5px] font-bold tracking-widest text-white px-2 py-0.5 rounded-sm ${evidenceHeroTone.badge}`}
                 >
                   AI SYNTHESIS
                 </span>
-                <span className={`text-xs font-bold ${
-                  selectedItem.complianceScore < 85 ? 'text-rose-600' : 'text-teal-700'
-                }`}>
-                  {selBand.label}
+                <span className={`text-xs font-bold ${evidenceHeroTone.text}`}>
+                  {evidenceHeroTone.label}
                 </span>
                 <span className="ml-auto font-mono text-[10px] text-slate-400 font-semibold">
                   {prioritizedEvidence.length} sources analyzed
@@ -1400,7 +1551,22 @@ export function ClinTrialWorkspace() {
                 </div>
               );
             })()}
-              </>
+                </>
+              ) : (
+                <div className="h-full min-h-[280px] flex items-center justify-center text-center">
+                  <div className="max-w-xs">
+                    <div className="mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded border border-blue-100 bg-blue-50 text-blue-500">
+                      <Activity className={`h-4 w-4 ${isAgentRunning ? 'animate-pulse' : ''}`} />
+                    </div>
+                    <div className="text-[13px] font-bold text-slate-700">
+                      Evidence search in progress
+                    </div>
+                    <div className="mt-1 text-[12px] leading-relaxed text-slate-400">
+                      Evidence cards will appear here as soon as source ranking completes for this line.
+                    </div>
+                  </div>
+                </div>
+              )
             ) : (
               <div className="h-full min-h-[280px] flex items-center justify-center text-center">
                 <div className="max-w-xs">
@@ -1527,7 +1693,7 @@ export function ClinTrialWorkspace() {
           </div>
 
           <div className="flex-1 overflow-y-auto min-h-0 p-5 bg-slate-50/20">
-            {selectedItem ? (
+            {selectedBoundaryReady && selectedItem ? (
               <>
             {/* HERO SCORE & CONFIDENCE BLOCK */}
             <div 
@@ -1687,10 +1853,12 @@ export function ClinTrialWorkspace() {
                     <SlidersHorizontal className="h-4 w-4" />
                   </div>
                   <div className="text-[13px] font-bold text-slate-700">
-                    No boundary result yet
+                    {selectedItem ? 'Boundary evaluation in progress' : 'No boundary result yet'}
                   </div>
                   <div className="mt-1 text-[12px] leading-relaxed text-slate-400">
-                    Compliance scores appear after backend review completes.
+                    {selectedItem
+                      ? 'Compliance score and routing will appear as soon as the agent emits a boundary decision.'
+                      : 'Compliance scores appear after backend review completes.'}
                   </div>
                 </div>
               </div>
