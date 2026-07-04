@@ -62,8 +62,8 @@ export function DnaHelix() {
       const helixH = height - topPad - botPad;
       const float = Math.sin(t * 0.0006) * 4;
 
-      const radius = Math.min(width * 0.24, 120);
-      const turns = 3.2;
+      const radius = Math.min(width * 0.22, 110);
+      const turns = 4;
       const segments = Math.max(120, Math.floor(helixH / 4));
 
       // Perspective
