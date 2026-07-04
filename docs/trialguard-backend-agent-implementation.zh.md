@@ -67,14 +67,14 @@ Content-Type: multipart/form-data
 请求字段：
 
 ```text
-invoice: image/png | image/jpeg | application/pdf
+invoice: image/png | image/jpeg | image/webp | image/svg+xml | application/pdf
 mode?: demo | strict
 ```
 
-MVP 中：
+当前实现中：
 
-- `demo` 模式接受上传文件，但 invoice line 使用 fixture 抽取结果。
-- `strict` 模式后续接真实 OCR / vision extraction。
+- `strict` 是默认模式，使用 Vultr vision-capable chat model 从上传图片抽取 invoice line。
+- `demo` 模式仅用于合成 demo 入口；当视觉提取不可用时允许使用 fixture fallback。
 
 响应建议使用 `ReadableStream` 返回 newline-delimited JSON events。前端可以边读边渲染 agent trace。
 
@@ -590,4 +590,3 @@ Backend tools = read-only evidence search and source grounding
 Rules engine = boundary decision and safety controls
 Frontend = live observable agent trace and audit-friendly result
 ```
-

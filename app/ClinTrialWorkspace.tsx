@@ -396,6 +396,7 @@ function TraceProgress({
     <div className="mt-3">
       <div className="flex items-center justify-between text-xs font-medium text-slate-500">
         <span>
+          {progress.label ? `${progress.label} ` : ""}
           {progress.done}/{progress.total}
         </span>
         <span>{percent}%</span>
@@ -565,7 +566,7 @@ function EmptyPanel({ title, text }: { title: string; text: string }) {
 
 export function ClinTrialWorkspace() {
   const [hasHydrated, setHasHydrated] = useState(false);
-  const [mode, setMode] = useState<AgentReviewMode>("demo");
+  const [mode, setMode] = useState<AgentReviewMode>("strict");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isRunning, setIsRunning] = useState(false);
   const [runId, setRunId] = useState<string | null>(null);
@@ -846,6 +847,7 @@ export function ClinTrialWorkspace() {
         type: "image/svg+xml",
       }),
     );
+    setMode("demo");
     setErrorMessage(null);
   }
 
@@ -945,6 +947,9 @@ export function ClinTrialWorkspace() {
                     }
 
                     setSelectedFile(nextFile);
+                    if (nextFile) {
+                      setMode("strict");
+                    }
                     setErrorMessage(null);
                   }}
                   type="file"
@@ -970,8 +975,8 @@ export function ClinTrialWorkspace() {
                     onChange={(event) => setMode(event.target.value as AgentReviewMode)}
                     value={mode}
                   >
-                    <option value="demo">demo</option>
                     <option value="strict">strict</option>
+                    <option value="demo">demo</option>
                   </select>
                   <button
                     className="min-h-11 rounded bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"

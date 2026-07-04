@@ -63,6 +63,30 @@ export type BoundaryRecommendation = {
   auditTrail: string[];
 };
 
+export type EvidenceGap = {
+  kind:
+    | "coverage_not_checked"
+    | "protocol_not_checked"
+    | "budget_not_checked"
+    | "site_evidence_not_checked"
+    | "ledger_not_checked"
+    | "budget_support_not_found"
+    | "protocol_support_not_found"
+    | "site_evidence_incomplete"
+    | "duplicate_risk"
+    | "policy_or_contract_gap";
+  message: string;
+  sourceType?: EvidenceSource;
+  suggestedTools: AgentTool[];
+};
+
+export type EvidencePacketVerification = {
+  verified: boolean;
+  checkedSources: EvidenceSource[];
+  gaps: EvidenceGap[];
+  allowedNextTools: AgentTool[];
+};
+
 export type AgentTracePhase =
   | "upload"
   | "extraction"
@@ -104,6 +128,7 @@ export type AgentTraceUpdate = {
   progress?: {
     done: number;
     total: number;
+    label?: string;
   };
   highlights?: string[];
   updatedAt: string;
@@ -137,6 +162,7 @@ export type AgentReviewResult = {
   retrievalPlans?: Record<string, RetrievalPlan>;
   evidenceByLineId?: Record<string, EvidenceCard[]>;
   recommendationsByLineId?: Record<string, BoundaryRecommendation>;
+  verificationByLineId?: Record<string, EvidencePacketVerification>;
   traceLog?: AgentTraceEntry[];
   recommendations: BoundaryRecommendation[];
   completedAt: string;
