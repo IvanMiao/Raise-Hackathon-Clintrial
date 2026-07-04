@@ -155,7 +155,7 @@ export function DnaHelix() {
             kind: "node",
             z: p.z,
             p,
-            color: s === 0 ? forest : charcoal,
+            color: strandColors[s],
             pulseBoost,
           });
         }
