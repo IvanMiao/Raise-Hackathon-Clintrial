@@ -17,7 +17,6 @@ import {
   HelpCircle,
   FileText,
   Activity,
-  User,
   FlaskConical,
   Eye,
   SlidersHorizontal,
@@ -29,6 +28,8 @@ import type {
   AgentEvent,
   AgentReviewMode,
   AgentReviewResult,
+  AgentTraceEntry,
+  AgentTraceKind,
   BoundaryRecommendation,
   EvidenceCard,
   EvidenceSource,
@@ -40,6 +41,13 @@ type AgentRunStatus = 'idle' | 'running' | 'done' | 'failed';
 type AgentStreamReadResult = {
   result: AgentReviewResult | null;
   errorMessage: string | null;
+};
+
+type SavedAgentTrace = {
+  runId: string;
+  completedAt: string;
+  uploadedFileName: string;
+  entries: AgentTraceEntry[];
 };
 
 const agentReviewMode: AgentReviewMode = 'demo';
@@ -83,6 +91,23 @@ const boundaryLabels: Record<BoundaryRecommendation['boundary'], string> = {
   'Policy or contract gap': 'Policy gap',
 };
 
+const traceStorageKey = 'wisegate.latestAgentTrace';
+
+const traceKindLabels: Record<AgentTraceKind, string> = {
+  agent_decision: 'Agent',
+  tool_call: 'Tool',
+  document_retrieval: 'Retrieval',
+  evidence_rank: 'Ranking',
+  safety_rule: 'Rule',
+};
+
+const traceStatusStyles: Record<NonNullable<AgentTraceEntry['status']>, string> = {
+  queued: 'bg-slate-100 text-slate-500',
+  running: 'bg-blue-50 text-blue-700',
+  done: 'bg-teal-50 text-teal-700',
+  failed: 'bg-rose-50 text-rose-600',
+};
+
 function compactText(value: string, maxLength: number): string {
   const compacted = value.replace(/\s+/g, ' ').trim();
 
@@ -91,6 +116,60 @@ function compactText(value: string, maxLength: number): string {
   }
 
   return `${compacted.slice(0, maxLength - 3).trimEnd()}...`;
+}
+
+function traceTimeLabel(value: string): string {
+  const parsed = new Date(value);
+
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(11, 19);
+  }
+
+  return value.length >= 19 ? value.slice(11, 19) : value;
+}
+
+function tracePhaseLabel(phase: AgentTraceEntry['phase']): string {
+  return phase.replace(/_/g, ' ').toUpperCase();
+}
+
+function traceToolLabel(tool: AgentTraceEntry['tool']): string {
+  return tool ? tool.replace(/_/g, ' ') : 'backend workflow';
+}
+
+function parseSavedAgentTrace(rawValue: string | null): SavedAgentTrace | null {
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as Partial<SavedAgentTrace>;
+
+    if (
+      typeof parsed.runId !== 'string' ||
+      typeof parsed.completedAt !== 'string' ||
+      typeof parsed.uploadedFileName !== 'string' ||
+      !Array.isArray(parsed.entries)
+    ) {
+      return null;
+    }
+
+    return {
+      runId: parsed.runId,
+      completedAt: parsed.completedAt,
+      uploadedFileName: parsed.uploadedFileName,
+      entries: parsed.entries as AgentTraceEntry[],
+    };
+  } catch {
+    return null;
+  }
+}
+
+function persistSavedAgentTrace(trace: SavedAgentTrace): void {
+  try {
+    window.localStorage.setItem(traceStorageKey, JSON.stringify(trace));
+  } catch {
+    // Non-critical: the in-memory trace remains available in the workspace.
+  }
 }
 
 function normalizeErrorPayload(payload: unknown): string {
@@ -303,6 +382,15 @@ function auditEntryFromAgentResult(result: AgentReviewResult): AuditTrailEntry {
   };
 }
 
+function savedTraceFromAgentResult(result: AgentReviewResult): SavedAgentTrace {
+  return {
+    runId: result.runId,
+    completedAt: result.completedAt,
+    uploadedFileName: result.uploadedInvoice.fileName,
+    entries: result.traceLog ?? [],
+  };
+}
+
 export function ClinTrialWorkspace() {
   // App States
   const [items, setItems] = useState<TrialItem[]>([]);
@@ -313,6 +401,9 @@ export function ClinTrialWorkspace() {
   const [reason, setReason] = useState<string>('');
   const [trailExpanded, setTrailExpanded] = useState<boolean>(false);
   const [trail, setTrail] = useState<AuditTrailEntry[]>([]);
+  const [agentTraceExpanded, setAgentTraceExpanded] = useState<boolean>(false);
+  const [agentTraceSnapshot, setAgentTraceSnapshot] =
+    useState<SavedAgentTrace | null>(null);
   const [showAiNotes, setShowAiNotes] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -332,6 +423,16 @@ export function ClinTrialWorkspace() {
       abortControllerRef.current?.abort();
       revealTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
     };
+  }, []);
+
+  useEffect(() => {
+    try {
+      setAgentTraceSnapshot(
+        parseSavedAgentTrace(window.localStorage.getItem(traceStorageKey)),
+      );
+    } catch {
+      setAgentTraceSnapshot(null);
+    }
   }, []);
 
   // Selection helper to auto-reset evidence accordion state
@@ -511,6 +612,10 @@ export function ClinTrialWorkspace() {
   const isAgentRunning = agentStatus === 'running';
   const selectedFileError = selectedFile ? invoiceUploadError(selectedFile) : null;
   const canRunAgent = selectedFile !== null && selectedFileError === null && !isAgentRunning;
+  const agentTraceLog = agentTraceSnapshot?.entries ?? [];
+  const agentTraceRunLabel = agentTraceSnapshot
+    ? `${agentTraceSnapshot.runId.slice(0, 8)} · ${compactText(agentTraceSnapshot.uploadedFileName, 28)}`
+    : 'No saved run';
 
   function clearItemRevealTimers(): void {
     revealTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
@@ -533,8 +638,11 @@ export function ClinTrialWorkspace() {
 
   function applyAgentResult(result: AgentReviewResult): void {
     const nextItems = mapAgentResultToItems(result);
+    const nextTraceSnapshot = savedTraceFromAgentResult(result);
 
     setItems(nextItems);
+    setAgentTraceSnapshot(nextTraceSnapshot);
+    persistSavedAgentTrace(nextTraceSnapshot);
 
     if (nextItems.length > 0) {
       setSelectedId(nextItems[0].id);
@@ -721,6 +829,7 @@ export function ClinTrialWorkspace() {
     setSelectedCategory('All');
     setSearchQuery('');
     setEvidenceExpanded(false);
+    setAgentTraceExpanded(false);
     setDecision('');
     setReason('');
     setVisibleItemCount(0);
@@ -911,9 +1020,6 @@ export function ClinTrialWorkspace() {
               </button>
             )}
 
-            <div className="w-8 h-8 rounded bg-[#0f766e] text-white flex items-center justify-center font-bold text-xs select-none">
-              EV
-            </div>
           </form>
         </div>
 
@@ -1591,12 +1697,122 @@ export function ClinTrialWorkspace() {
             )}
           </div>
 
-          {/* BOTTOM IMMUTABLE AUDIT TRAIL */}
+          {/* BOTTOM TRACE AND AUDIT LOGS */}
           <div className="flex-none bg-slate-50/50 border-t border-slate-200/60">
-            {/* Minimalist toggle header integrating into bottom background */}
-            <div 
-              onClick={() => setTrailExpanded(!trailExpanded)}
-              className="cursor-pointer px-5 py-3 flex items-center justify-between select-none hover:bg-slate-100/60 transition-all text-slate-500 hover:text-slate-800"
+            <button
+              aria-expanded={agentTraceExpanded}
+              className="w-full cursor-pointer px-5 py-3 flex items-center justify-between select-none hover:bg-slate-100/60 transition-all text-slate-500 hover:text-slate-800"
+              onClick={() => setAgentTraceExpanded((isExpanded) => !isExpanded)}
+              type="button"
+            >
+              <div className="flex items-center gap-2">
+                <Activity className="w-3.5 h-3.5 text-slate-400 stroke-[2.5]" />
+                <span className="font-mono text-[10px] font-bold tracking-wider uppercase text-slate-600">
+                  AGENT TRACE
+                </span>
+                <span className="font-mono text-[8.5px] bg-slate-200/60 text-slate-600 px-1.5 py-0.5 rounded font-semibold select-none">
+                  SAVED · {agentTraceLog.length}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-[10px] font-semibold text-slate-400">
+                  {agentTraceExpanded ? 'Hide trace' : 'Read trace'}
+                </span>
+                <div className="transition-transform duration-200" style={{ transform: agentTraceExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 stroke-[2.5]" />
+                </div>
+              </div>
+            </button>
+
+            {agentTraceExpanded && (
+              <div className="max-h-64 overflow-y-auto border-t border-slate-150 bg-white divide-y divide-slate-100">
+                {agentTraceLog.length === 0 ? (
+                  <div className="px-5 py-4 text-[11px] font-medium text-slate-400">
+                    No saved agent trace yet.
+                  </div>
+                ) : (
+                  <>
+                    <div className="px-5 py-2 flex items-center justify-between gap-3 bg-slate-50/70">
+                      <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                        Latest run
+                      </span>
+                      <span className="min-w-0 truncate font-mono text-[9.5px] font-semibold text-slate-500">
+                        {agentTraceRunLabel}
+                      </span>
+                    </div>
+                    {agentTraceLog.map((entry, idx) => (
+                      <div
+                        key={entry.id}
+                        className="trace-log-enter px-5 py-2.5 hover:bg-slate-50/50 transition-colors"
+                        style={{ animationDelay: staggerDelay(idx) }}
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <span
+                            className={`mt-0.5 rounded px-1.5 py-0.5 font-mono text-[8.5px] font-bold uppercase ${
+                              entry.status
+                                ? traceStatusStyles[entry.status]
+                                : 'bg-slate-100 text-slate-500'
+                            }`}
+                          >
+                            {entry.status ?? 'done'}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                              <span className="font-mono text-[9px] text-slate-400">
+                                {traceTimeLabel(entry.at)}
+                              </span>
+                              <span className="font-mono text-[9px] font-bold uppercase text-slate-500">
+                                {traceKindLabels[entry.kind]}
+                              </span>
+                              <span className="font-mono text-[9px] uppercase text-slate-400">
+                                {tracePhaseLabel(entry.phase)}
+                              </span>
+                              {entry.lineId && (
+                                <span className="font-mono text-[9px] font-bold text-emerald-800">
+                                  {entry.lineId}
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 text-[11.5px] font-bold leading-snug text-slate-800">
+                              {entry.title}
+                            </div>
+                            {entry.detail && (
+                              <div className="mt-1 text-[11px] leading-relaxed text-slate-600">
+                                {compactText(entry.detail, 150)}
+                              </div>
+                            )}
+                            <div className="mt-1.5 flex flex-wrap gap-1.5">
+                              <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[8.5px] font-semibold text-slate-500">
+                                {traceToolLabel(entry.tool)}
+                              </span>
+                              {entry.locator && (
+                                <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[8.5px] font-semibold text-slate-500">
+                                  {compactText(entry.locator, 40)}
+                                </span>
+                              )}
+                              {entry.sources?.slice(0, 3).map((source, sourceIdx) => (
+                                <span
+                                  key={`${entry.id}-${source}-${sourceIdx}`}
+                                  className="rounded bg-teal-50 px-1.5 py-0.5 font-mono text-[8.5px] font-semibold text-teal-700"
+                                >
+                                  {evidenceSourceToUiSource[source] ?? source}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+
+            <button
+              aria-expanded={trailExpanded}
+              className="w-full cursor-pointer px-5 py-3 flex items-center justify-between select-none hover:bg-slate-100/60 transition-all text-slate-500 hover:text-slate-800 border-t border-slate-200/60"
+              onClick={() => setTrailExpanded((isExpanded) => !isExpanded)}
+              type="button"
             >
               <div className="flex items-center gap-2">
                 <Clock className="w-3.5 h-3.5 text-slate-400 stroke-[2.5]" />
@@ -1604,20 +1820,19 @@ export function ClinTrialWorkspace() {
                   AUDIT TRAIL
                 </span>
                 <span className="font-mono text-[8.5px] bg-slate-200/60 text-slate-600 px-1.5 py-0.5 rounded font-semibold select-none flex items-center gap-1">
-                  <Lock className="w-2 h-2 text-slate-500" /> IMMUTABLE · {trail.length}
+                  <Lock className="w-2 h-2 text-slate-500" /> DECISION RECORDS · {trail.length}
                 </span>
               </div>
               <div className="flex items-center gap-1.5 text-xs">
                 <span className="text-[10px] font-semibold text-slate-400">
-                  {trailExpanded ? 'Hide history' : 'View history'}
+                  {trailExpanded ? 'Hide records' : 'View records'}
                 </span>
                 <div className="transition-transform duration-200" style={{ transform: trailExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                   <ChevronDown className="w-3.5 h-3.5 text-slate-400 stroke-[2.5]" />
                 </div>
               </div>
-            </div>
+            </button>
 
-            {/* Collapsible scrollable list of all Audit records */}
             {trailExpanded && (
               <div className="max-h-52 overflow-y-auto border-t border-slate-150 bg-white divide-y divide-slate-100">
                 {trail.length === 0 ? (
