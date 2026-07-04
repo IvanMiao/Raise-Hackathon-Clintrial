@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { MoleculeCanvas } from "@/components/MoleculeCanvas";
 import { DnaHelix } from "@/components/DnaHelix";
 
 export const Route = createFileRoute("/")({
@@ -18,10 +17,6 @@ function GreenDot() {
 function Landing() {
   return (
     <main className="relative h-screen w-full overflow-hidden bg-background text-foreground">
-      {/* Ghost molecule layer */}
-      <div className="pointer-events-none absolute inset-0 opacity-40">
-        <MoleculeCanvas />
-      </div>
 
       {/* Ghost watermark text */}
       <div

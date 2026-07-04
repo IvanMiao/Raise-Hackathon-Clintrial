@@ -1,244 +1,173 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Particle DNA — thousands of ink-like particles form a double helix,
- * drift with subtle turbulence, and periodically dissolve + reform.
- * Palette: forest (#2D4F3F) + charcoal (#1a1a1a) on cream. No gradients on background.
+ * DNA Helix — a clean, editorial double helix.
+ *
+ * Two sine strands crossing vertically, connected by evenly spaced rungs.
+ * Small filled dots (no blur) sit on each strand. A slow rotation phase
+ * animates the crossings. A soft luminous band travels upward. Rare warm-gold
+ * accents dot the strand. Everything reads as structure first, motion second.
  */
+
+const FOREST = "#2D4F3F";
+const CHARCOAL = "#1a1a1a";
+const GOLD = "#b8956a";
+
 export function DnaHelix() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext("2d", { alpha: true });
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const parent = canvas.parentElement!;
-    let width = 0;
-    let height = 0;
+    let W = 0;
+    let H = 0;
     let dpr = Math.max(1, window.devicePixelRatio || 1);
-
-    // Palette
-    const forest = { r: 45, g: 79, b: 63 };
-    const charcoal = { r: 26, g: 26, b: 26 };
-    const accent = { r: 168, g: 140, b: 90 }; // warm gold accent, very rare
-
-    type P = {
-      // target position along helix
-      u: number;         // 0..1 along strand
-      strand: 0 | 1;
-      isRung: boolean;   // rung particle vs strand particle
-      rungT: number;     // 0..1 across rung if isRung
-      // color
-      cr: number; cg: number; cb: number;
-      size: number;
-      // current position (for morph/drift)
-      x: number; y: number;
-      // per-particle drift phase
-      ph: number;
-      // dissipation offset (0 = on target, 1 = fully scattered)
-      scatterX: number; scatterY: number;
-      baseAlpha: number;
-    };
-
-    let particles: P[] = [];
+    let raf = 0;
+    const t0 = performance.now();
 
     const resize = () => {
       const rect = parent.getBoundingClientRect();
-      width = rect.width;
-      height = rect.height;
+      W = Math.max(1, rect.width);
+      H = Math.max(1, rect.height);
       dpr = Math.max(1, window.devicePixelRatio || 1);
-      canvas.width = Math.floor(width * dpr);
-      canvas.height = Math.floor(height * dpr);
-      canvas.style.width = `${width}px`;
-      canvas.style.height = `${height}px`;
+      canvas.width = Math.floor(W * dpr);
+      canvas.height = Math.floor(H * dpr);
+      canvas.style.width = `${W}px`;
+      canvas.style.height = `${H}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      seed();
     };
-
-    const seed = () => {
-      particles = [];
-      // Density scales with area, capped for perf
-      const area = width * height;
-      const target = Math.min(2600, Math.max(1400, Math.floor(area / 260)));
-
-      // 70% strand particles, 30% rung particles
-      const strandCount = Math.floor(target * 0.72);
-      const rungCount = target - strandCount;
-
-      const mkColor = () => {
-        const r = Math.random();
-        if (r < 0.02) return accent;
-        if (r < 0.55) return forest;
-        return charcoal;
-      };
-
-      for (let i = 0; i < strandCount; i++) {
-        const u = Math.random();
-        const strand: 0 | 1 = Math.random() < 0.5 ? 0 : 1;
-        const c = mkColor();
-        particles.push({
-          u,
-          strand,
-          isRung: false,
-          rungT: 0,
-          cr: c.r, cg: c.g, cb: c.b,
-          size: 0.55 + Math.random() * 1.15,
-          x: Math.random() * width,
-          y: Math.random() * height,
-          ph: Math.random() * Math.PI * 2,
-          scatterX: (Math.random() - 0.5) * width * 0.9,
-          scatterY: (Math.random() - 0.5) * height * 0.9,
-          baseAlpha: 0.55 + Math.random() * 0.4,
-        });
-      }
-      for (let i = 0; i < rungCount; i++) {
-        // Rungs concentrated at discrete u values for a laddered feel
-        const rungIdx = Math.floor(Math.random() * 22);
-        const u = rungIdx / 22 + (Math.random() - 0.5) * 0.008;
-        const c = Math.random() < 0.7 ? { r: 190, g: 183, b: 172 } : mkColor();
-        particles.push({
-          u,
-          strand: 0,
-          isRung: true,
-          rungT: Math.random(),
-          cr: c.r, cg: c.g, cb: c.b,
-          size: 0.45 + Math.random() * 0.85,
-          x: Math.random() * width,
-          y: Math.random() * height,
-          ph: Math.random() * Math.PI * 2,
-          scatterX: (Math.random() - 0.5) * width * 0.9,
-          scatterY: (Math.random() - 0.5) * height * 0.9,
-          baseAlpha: 0.35 + Math.random() * 0.35,
-        });
-      }
-    };
-
     resize();
-    const ro = new ResizeObserver(resize);
+
+    let roTimer: number | null = null;
+    const ro = new ResizeObserver(() => {
+      if (roTimer) return;
+      roTimer = window.setTimeout(() => {
+        roTimer = null;
+        resize();
+      }, 60);
+    });
     ro.observe(parent);
 
-    const start = performance.now();
-    let raf = 0;
+    const frame = (now: number) => {
+      const t = (now - t0) / 1000;
 
-    // Dissipation cycle: helix is "formed" then briefly scatters and reforms
-    // dissipation(t) in [0,1] — 0 = fully formed, 1 = fully scattered
-    const dissipation = (tSec: number) => {
-      const cycle = 9.5; // seconds
-      const p = (tSec % cycle) / cycle;
-      // Mostly formed, brief scatter around p≈0.5
-      // Smooth pulse using two eased ramps
-      const centered = Math.abs(p - 0.5) * 2; // 0 at middle, 1 at edges
-      const scatter = Math.max(0, 1 - centered); // 0 edges, 1 middle
-      // Ease
-      const s = scatter * scatter * (3 - 2 * scatter);
-      return s * 0.75; // cap so it never fully explodes
-    };
-
-    const draw = (now: number) => {
-      const t = (now - start) / 1000;
-      // Trail effect: paint cream with low alpha for motion blur
-      // Background is cream #f5f2ec area — use rgba to match
-      ctx.fillStyle = "rgba(245, 242, 236, 0.22)";
-      ctx.fillRect(0, 0, width, height);
+      ctx.clearRect(0, 0, W, H);
 
       // Helix geometry
-      const cx = width / 2;
-      const topPad = Math.min(50, height * 0.05);
-      const botPad = Math.min(50, height * 0.05);
-      const yTop = topPad;
-      const yBot = height - botPad;
-      const helixH = yBot - yTop;
-      const amplitude = Math.min(width * 0.3, 160);
-      const turns = 3.1;
-      const phase = t * 0.55;
-      const float = Math.sin(t * 0.6) * 4;
+      const cx = W / 2;
+      const topPad = H * 0.06;
+      const botPad = H * 0.06;
+      const helixH = H - topPad - botPad;
+      const amp = Math.min(W * 0.32, 190); // strand horizontal amplitude
+      const turns = 3.2; // vertical turns visible
+      const phase = t * 0.55; // slow rotation
 
-      const diss = dissipation(t);
+      const N = 220; // samples per strand
+      const strandA: { x: number; y: number; z: number }[] = [];
+      const strandB: { x: number; y: number; z: number }[] = [];
 
-      // Traveling luminous band (0..1 along helix, moves upward)
-      const bandPos = ((t * 0.14) % 1.2) - 0.1; // wraps with gap
-      const bandWidth = 0.14;
-
-      ctx.globalCompositeOperation = "source-over";
-
-      for (const p of particles) {
-        const u = p.u;
-        const y = yTop + u * helixH + float;
-        const theta = u * turns * Math.PI * 2 + phase;
-
-        let tx: number, ty: number, depth: number;
-        if (!p.isRung) {
-          const off = p.strand === 0 ? 0 : Math.PI;
-          tx = cx + Math.sin(theta + off) * amplitude;
-          ty = y;
-          depth = Math.cos(theta + off); // -1..1
-        } else {
-          const xA = cx + Math.sin(theta) * amplitude;
-          const xB = cx + Math.sin(theta + Math.PI) * amplitude;
-          tx = xA + (xB - xA) * p.rungT;
-          ty = y;
-          const dA = Math.cos(theta);
-          const dB = Math.cos(theta + Math.PI);
-          depth = dA + (dB - dA) * p.rungT;
-        }
-
-        // Per-particle turbulence drift
-        const drift = 1.8;
-        const dx = Math.sin(t * 0.9 + p.ph) * drift;
-        const dy = Math.cos(t * 0.7 + p.ph * 1.3) * drift;
-
-        // Apply dissipation: blend target with scattered position
-        const targetX = tx + dx + p.scatterX * diss;
-        const targetY = ty + dy + p.scatterY * diss;
-
-        // Ease current toward target (soft morph)
-        p.x += (targetX - p.x) * 0.12;
-        p.y += (targetY - p.y) * 0.12;
-
-        // Depth normalized 0..1 (1 = front)
-        const depthN = (depth + 1) / 2;
-
-        // Band highlight
-        let bandBoost = 0;
-        const du = Math.abs(u - bandPos);
-        if (du < bandWidth) bandBoost = 1 - du / bandWidth;
-
-        // Alpha attenuates when scattered
-        const dissAlpha = 1 - diss * 0.45;
-        const alpha = p.baseAlpha * (0.35 + depthN * 0.65) * dissAlpha;
-
-        const size = p.size * (0.7 + depthN * 0.9) + bandBoost * 0.8;
-
-        // Glow for front-facing / banded particles
-        if (depthN > 0.82 || bandBoost > 0.35) {
-          const glowR = size * (3 + bandBoost * 4);
-          const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowR);
-          const glowA = 0.14 * (depthN - 0.6) + bandBoost * 0.45;
-          g.addColorStop(0, `rgba(${p.cr},${p.cg},${p.cb},${Math.max(0, glowA)})`);
-          g.addColorStop(1, `rgba(${p.cr},${p.cg},${p.cb},0)`);
-          ctx.fillStyle = g;
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, glowR, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        ctx.fillStyle = `rgba(${p.cr},${p.cg},${p.cb},${alpha})`;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
-        ctx.fill();
+      for (let i = 0; i <= N; i++) {
+        const u = i / N; // 0..1 top->bottom
+        const y = topPad + u * helixH;
+        const theta = u * Math.PI * 2 * turns + phase;
+        const xa = cx + Math.sin(theta) * amp;
+        const xb = cx + Math.sin(theta + Math.PI) * amp;
+        const za = Math.cos(theta); // -1..1  (depth)
+        const zb = Math.cos(theta + Math.PI);
+        strandA.push({ x: xa, y, z: za });
+        strandB.push({ x: xb, y, z: zb });
       }
 
-      raf = requestAnimationFrame(draw);
+      // Luminous band traveling upward
+      const bandU = 1 - ((t * 0.14) % 1);
+      const bandY = topPad + bandU * helixH;
+      const bandRange = helixH * 0.22;
+
+      // --- Rungs (draw before strand dots so dots sit on top) ---
+      const RUNGS = 46;
+      for (let i = 0; i < RUNGS; i++) {
+        const u = i / (RUNGS - 1);
+        const idx = Math.round(u * N);
+        const a = strandA[idx];
+        const b = strandB[idx];
+        // Depth of the rung midpoint: fade rungs at the "back"
+        const zMid = (a.z + b.z) / 2;
+        const depth = (zMid + 1) / 2; // 0 back .. 1 front
+        const near = Math.abs(a.y - bandY) / bandRange;
+        const glow = Math.max(0, 1 - near);
+
+        const baseAlpha = 0.08 + depth * 0.28;
+        const alpha = Math.min(0.7, baseAlpha + glow * 0.35);
+
+        ctx.strokeStyle = rgba(FOREST, alpha);
+        ctx.lineWidth = 0.6 + depth * 0.7 + glow * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+
+      // --- Strand dots ---
+      const drawStrand = (strand: typeof strandA, tint: string) => {
+        for (let i = 0; i <= N; i++) {
+          const p = strand[i];
+          const depth = (p.z + 1) / 2; // 0 back .. 1 front
+          const near = Math.abs(p.y - bandY) / bandRange;
+          const glow = Math.max(0, 1 - near);
+
+          const r = 0.9 + depth * 2.0 + glow * 1.6;
+          const alpha = 0.18 + depth * 0.62 + glow * 0.2;
+
+          ctx.fillStyle = rgba(tint, Math.min(1, alpha));
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Rare gold accent
+          if (i % 37 === 0 && glow > 0.15) {
+            ctx.fillStyle = rgba(GOLD, 0.6 * glow);
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, r * 1.6, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      };
+
+      drawStrand(strandA, CHARCOAL);
+      drawStrand(strandB, FOREST);
+
+      // --- Luminous band highlight (soft horizontal wash) ---
+      const bandGrad = ctx.createRadialGradient(cx, bandY, 0, cx, bandY, amp * 1.6);
+      bandGrad.addColorStop(0, rgba(FOREST, 0.10));
+      bandGrad.addColorStop(1, rgba(FOREST, 0));
+      ctx.fillStyle = bandGrad;
+      ctx.beginPath();
+      ctx.arc(cx, bandY, amp * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+
+      raf = requestAnimationFrame(frame);
     };
 
-    raf = requestAnimationFrame(draw);
+    raf = requestAnimationFrame(frame);
+
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      if (roTimer) window.clearTimeout(roTimer);
     };
   }, []);
 
-  return <canvas ref={canvasRef} className="block h-full w-full" />;
+  return <canvas ref={canvasRef} className="block h-full w-full" aria-hidden />;
+}
+
+function rgba(hex: string, a: number) {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, a))})`;
 }
