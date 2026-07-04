@@ -7,12 +7,17 @@ import {
   searchProtocolEvidence,
   searchSiteEvidence,
 } from "@/lib/agent/dataSearch";
-import type { EvidenceCard, InvoiceLine, RetrievalPlan } from "@/lib/agent/types";
+import type {
+  EvidenceCard,
+  EvidenceSource,
+  InvoiceLine,
+  RetrievalPlan,
+} from "@/lib/agent/types";
 import { rankEvidenceForInvoiceLine } from "@/lib/agent/vultrEvidenceRanker";
 
 type EvidenceSearchTrace = {
   query: string;
-  sources: string[];
+  sources: EvidenceSource[];
 };
 
 export type RankedEvidenceSearchResult = {

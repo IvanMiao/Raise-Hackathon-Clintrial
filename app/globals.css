@@ -28,3 +28,46 @@ textarea,
 select {
   font: inherit;
 }
+
+@keyframes trace-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes trace-card-glow {
+  0% {
+    border-color: #bfdbfe;
+    box-shadow: 0 0 0 1px rgb(37 99 235 / 14%);
+  }
+
+  100% {
+    border-color: #e2e8f0;
+    box-shadow: 0 0 0 0 rgb(37 99 235 / 0%);
+  }
+}
+
+.trace-card-enter {
+  animation:
+    trace-card-enter 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both,
+    trace-card-glow 800ms ease-out both;
+  transform-origin: top center;
+}
+
+.trace-log-enter {
+  animation: trace-card-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  transform-origin: top center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trace-card-enter,
+  .trace-log-enter {
+    animation: none;
+  }
+}

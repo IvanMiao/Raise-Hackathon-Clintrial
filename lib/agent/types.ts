@@ -63,6 +63,66 @@ export type BoundaryRecommendation = {
   auditTrail: string[];
 };
 
+export type AgentTracePhase =
+  | "upload"
+  | "extraction"
+  | "planning"
+  | "search"
+  | "ranking"
+  | "evaluation"
+  | "summary";
+
+export type AgentTraceStatus = "queued" | "running" | "done" | "failed";
+
+export type AgentTool =
+  | "invoice_vision_extractor"
+  | "retrieval_planner"
+  | "coverage_grid_search"
+  | "protocol_search"
+  | "cta_budget_search"
+  | "site_evidence_search"
+  | "prior_ledger_search"
+  | "evidence_ranker"
+  | "boundary_evaluator"
+  | "reviewer_summary";
+
+export type AgentTraceKind =
+  | "agent_decision"
+  | "tool_call"
+  | "document_retrieval"
+  | "evidence_rank"
+  | "safety_rule";
+
+export type AgentTraceUpdate = {
+  type: "trace_update";
+  id: AgentTracePhase;
+  status: AgentTraceStatus;
+  title: string;
+  headline: string;
+  detail?: string;
+  tool?: AgentTool;
+  progress?: {
+    done: number;
+    total: number;
+  };
+  highlights?: string[];
+  updatedAt: string;
+};
+
+export type AgentTraceEntry = {
+  id: string;
+  at: string;
+  phase: AgentTracePhase;
+  kind: AgentTraceKind;
+  tool?: AgentTool;
+  lineId?: string;
+  title: string;
+  detail?: string;
+  sources?: EvidenceSource[];
+  locator?: string;
+  status?: AgentTraceStatus;
+};
+
 export type UploadedInvoiceSummary = {
   fileName: string;
   contentType: string;
@@ -77,12 +137,14 @@ export type AgentReviewResult = {
   retrievalPlans?: Record<string, RetrievalPlan>;
   evidenceByLineId?: Record<string, EvidenceCard[]>;
   recommendationsByLineId?: Record<string, BoundaryRecommendation>;
+  traceLog?: AgentTraceEntry[];
   recommendations: BoundaryRecommendation[];
   completedAt: string;
 };
 
 export type AgentEvent =
   | { type: "started"; runId: string }
+  | AgentTraceUpdate
   | { type: "step"; label: string; status: "running" | "done" | "failed" }
   | { type: "extraction"; lines: InvoiceLine[] }
   | { type: "retrieval_plan"; lineId: string; plan: RetrievalPlan }
