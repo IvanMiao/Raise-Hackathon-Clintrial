@@ -22,9 +22,13 @@ cp .env.example .env
 ```env
 VULTR_INFERENCE_KEY=your_serverless_inference_api_key_here
 VULTR_MODEL=moonshotai/Kimi-K2.6
+VULTR_RETRIEVAL_PLANNER_MODEL=moonshotai/Kimi-K2.6
+VULTR_RETRIEVAL_PLANNER_TIMEOUT_MS=12000
 ```
 
 `VULTR_INFERENCE_KEY` is not the same as the Vultr account `VULTR_API_KEY`.
+`VULTR_RETRIEVAL_PLANNER_MODEL` can point to any Vultr chat-completion model
+available to the account; if unset, the retrieval planner uses `VULTR_MODEL`.
 
 ## Development
 

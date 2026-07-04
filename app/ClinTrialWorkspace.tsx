@@ -1,591 +1,849 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
-type BoundaryTone = "auto" | "confirm" | "review" | "gap";
+import type {
+  AgentEvent,
+  AgentReviewMode,
+  AgentReviewResult,
+  EvidenceCard,
+  InvoiceLine,
+  RetrievalPlan,
+} from "@/lib/agent/types";
 
-type EvidenceStatus = "matched" | "partial" | "missing" | "blocked";
+type TraceStatus = "running" | "done" | "failed";
 
-type EvidenceCard = {
-  title: string;
-  source: string;
-  status: EvidenceStatus;
-  detail: string;
-};
+type ReviewState = "ready" | "running" | "done" | "failed";
 
-type InvoiceLine = {
+type TraceItem = {
   id: string;
-  lineNumber: number;
-  patientId: string;
-  visitName: string;
-  itemCode: string;
-  itemName: string;
-  rawDescription: string;
-  amount: string;
-  confidence: string;
-  boundary: string;
-  boundaryTone: BoundaryTone;
-  score: number;
-  decisionReason: string;
-  evidence: EvidenceCard[];
-  auditTrail: string[];
+  label: string;
+  status: TraceStatus;
+  detail?: string;
 };
 
-const invoiceLines: InvoiceLine[] = [
-  {
-    id: "line-1",
-    lineNumber: 1,
-    patientId: "P-101",
-    visitName: "Visit 3",
-    itemCode: "VISIT_FEE_V3",
-    itemName: "Visit 3 site fee",
-    rawDescription: "Visit 3 site fee - wk2 completed",
-    amount: "EUR 450.00",
-    confidence: "96%",
-    boundary: "Auto-handle candidate",
-    boundaryTone: "auto",
-    score: 94,
-    decisionReason:
-      "Coverage rule, completed visit evidence, visit window, and ledger checks all support a low-risk route.",
-    evidence: [
-      {
-        title: "Coverage grid",
-        source: "coverage_analysis_billing_grid.csv",
-        status: "matched",
-        detail:
-          "VISIT_FEE_V3 is sponsor-routed when Visit 3 is completed in window and no duplicate exists.",
-      },
-      {
-        title: "Site evidence",
-        source: "site_evidence_log.csv",
-        status: "matched",
-        detail:
-          "P-101 Visit 3 completed on 2026-06-10 with in-window status.",
-      },
-      {
-        title: "Prior payments",
-        source: "prior_payment_ledger.csv",
-        status: "matched",
-        detail: "No paid prior ledger row for the same patient, visit, and item.",
-      },
-    ],
-    auditTrail: [
-      "Extracted line 1 from uploaded invoice image with 96% confidence.",
-      "Matched VISIT_FEE_V3 coverage rule for SITE-PARIS-01.",
-      "Recommended future automation boundary only after human-approved playbook adoption.",
-    ],
-  },
-  {
-    id: "line-2",
-    lineNumber: 2,
-    patientId: "P-102",
-    visitName: "Visit 3",
-    itemCode: "IMP_INFUSION_V3",
-    itemName: "TJ301/placebo IV infusion administration",
-    rawDescription: "TJ301/placebo IV infusion admin, Day 14",
-    amount: "EUR 820.00",
-    confidence: "94%",
-    boundary: "Auto-handle candidate",
-    boundaryTone: "auto",
-    score: 92,
-    decisionReason:
-      "The protocol schedules IMP administration on Day 14 and site evidence contains an infusion record.",
-    evidence: [
-      {
-        title: "Protocol evidence",
-        source: "Prot_000.pdf",
-        status: "matched",
-        detail:
-          "TJ301/placebo administrations occur on Days 0, 14, 28, 42, 56, and 70.",
-      },
-      {
-        title: "Site evidence",
-        source: "site_evidence_log.csv",
-        status: "matched",
-        detail:
-          "P-102 Visit 3 completed in window with imp_infusion and infusion_record events.",
-      },
-      {
-        title: "Prior payments",
-        source: "prior_payment_ledger.csv",
-        status: "matched",
-        detail: "Same patient has prior Visit 2 activity only; no Visit 3 infusion duplicate.",
-      },
-    ],
-    auditTrail: [
-      "Normalized abbreviated invoice wording to IMP_INFUSION_V3.",
-      "Confirmed Day 14 protocol support and source-binder infusion evidence.",
-      "Marked as an automation candidate, not a payment approval.",
-    ],
-  },
-  {
-    id: "line-3",
-    lineNumber: 3,
-    patientId: "P-104",
-    visitName: "Visit 3",
-    itemCode: "PK_SAMPLE_V3",
-    itemName: "PK blood sample",
-    rawDescription: "PK blood draw / sample handling - V3",
-    amount: "EUR 275.00",
-    confidence: "88%",
-    boundary: "Human review required",
-    boundaryTone: "review",
-    score: 48,
-    decisionReason:
-      "The item can be sponsor-routed only for PK subgroup patients, but the site evidence says P-104 is not in the subgroup.",
-    evidence: [
-      {
-        title: "Coverage grid",
-        source: "coverage_analysis_billing_grid.csv",
-        status: "partial",
-        detail:
-          "PK_SAMPLE_V3 is conditional and requires pk_substudy=true plus PK sample evidence.",
-      },
-      {
-        title: "Site evidence",
-        source: "site_evidence_log.csv",
-        status: "blocked",
-        detail:
-          "P-104 Visit 3 exists, but pk_substudy=false and pk_sample evidence is missing.",
-      },
-      {
-        title: "Protocol evidence",
-        source: "Prot_000.pdf",
-        status: "partial",
-        detail:
-          "PK is assessed in a subgroup, so protocol support alone is not enough.",
-      },
-    ],
-    auditTrail: [
-      "Extracted a messy PK description and mapped it to PK_SAMPLE_V3.",
-      "Detected subgroup condition failure for patient P-104.",
-      "Drafted reviewer question: was this patient later consented or billed in error?",
-    ],
-  },
-  {
-    id: "line-4",
-    lineNumber: 4,
-    patientId: "P-104",
-    visitName: "Visit 3",
-    itemCode: "ADMIN_FEE",
-    itemName: "Administrative processing fee",
-    rawDescription: "Admin processing fee - visit package",
-    amount: "EUR 95.00",
-    confidence: "91%",
-    boundary: "Human review required",
-    boundaryTone: "review",
-    score: 42,
-    decisionReason:
-      "The admin fee is normally sponsor-routed, but the same patient, visit, and item has already been paid.",
-    evidence: [
-      {
-        title: "Coverage grid",
-        source: "coverage_analysis_billing_grid.csv",
-        status: "matched",
-        detail:
-          "ADMIN_FEE is billable once per completed visit when no duplicate exists.",
-      },
-      {
-        title: "Site evidence",
-        source: "site_evidence_log.csv",
-        status: "matched",
-        detail: "P-104 Visit 3 completed in window.",
-      },
-      {
-        title: "Prior payments",
-        source: "prior_payment_ledger.csv",
-        status: "blocked",
-        detail:
-          "PAY-2026-0187 already paid ADMIN_FEE for P-104 Visit 3 on 2026-06-20.",
-      },
-    ],
-    auditTrail: [
-      "Matched admin fee against sponsor-routed site operations rule.",
-      "Built duplicate key CTJ301UC201|SITE-PARIS-01|P-104|Visit 3|ADMIN_FEE.",
-      "Held for finance review because duplicate control fired.",
-    ],
-  },
-  {
-    id: "line-5",
-    lineNumber: 5,
-    patientId: "P-105",
-    visitName: "Visit 3",
-    itemCode: "ENDOSCOPY_V3",
-    itemName: "Endoscopy with biopsy",
-    rawDescription: "Endoscopy w/ biopsy, disease activity check",
-    amount: "EUR 1,650.00",
-    confidence: "90%",
-    boundary: "AI recommend + finance confirm",
-    boundaryTone: "confirm",
-    score: 58,
-    decisionReason:
-      "Disease activity evidence exists, but Visit 3 endoscopy lacks routine sponsor-billable support and has no attached authorization.",
-    evidence: [
-      {
-        title: "Protocol evidence",
-        source: "Prot_000.pdf",
-        status: "partial",
-        detail:
-          "Disease activity assessments occur at Visit 3, but endoscopy and biopsy are described for Screening and Visit 8.",
-      },
-      {
-        title: "Site evidence",
-        source: "site_evidence_log.csv",
-        status: "missing",
-        detail:
-          "Site note mentions symptoms, but no procedure source, sponsor approval, or authorization is attached.",
-      },
-      {
-        title: "Coverage grid",
-        source: "coverage_analysis_billing_grid.csv",
-        status: "partial",
-        detail:
-          "ENDOSCOPY_V3 requires explicit unscheduled procedure authorization before routing.",
-      },
-    ],
-    auditTrail: [
-      "Mapped invoice wording to ENDOSCOPY_V3 with 90% extraction confidence.",
-      "Found protocol ambiguity between disease assessment and routine endoscopy support.",
-      "Prepared finance-confirm recommendation with missing authorization evidence.",
-    ],
-  },
-  {
-    id: "line-6",
-    lineNumber: 6,
-    patientId: "P-106",
-    visitName: "Unscheduled",
-    itemCode: "UNDEFINED_REMOTE_MONITORING",
-    itemName: "Remote monitoring fee",
-    rawDescription: "Remote monitoring tech fee, sponsor billable?",
-    amount: "EUR 300.00",
-    confidence: "76%",
-    boundary: "Policy or contract gap",
-    boundaryTone: "gap",
-    score: 24,
-    decisionReason:
-      "The item has no supporting protocol, CTA, budget, or billing rule in the current evidence set.",
-    evidence: [
-      {
-        title: "Coverage grid",
-        source: "coverage_analysis_billing_grid.csv",
-        status: "missing",
-        detail:
-          "Remote monitoring is intentionally marked as a policy gap in the demo rule set.",
-      },
-      {
-        title: "Site operations note",
-        source: "site_evidence_log.csv",
-        status: "partial",
-        detail:
-          "A local operations note exists, but no budget reference or billing policy rule is linked.",
-      },
-      {
-        title: "Invoice extraction",
-        source: "invoice_extraction_fixture.csv",
-        status: "partial",
-        detail:
-          "Low-confidence mapping from free-text invoice description; reviewer should verify the item category.",
-      },
-    ],
-    auditTrail: [
-      "Extracted remote monitoring fee with 76% confidence.",
-      "No policy or budget basis found in the current evidence set.",
-      "Created policy-gap ticket draft for CTA or billing-policy clarification.",
-    ],
-  },
-];
+const emptyRetrievalPlans: Record<string, RetrievalPlan> = {};
 
-const boundaryStyles: Record<BoundaryTone, string> = {
-  auto: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  confirm: "border-blue-200 bg-blue-50 text-blue-800",
-  review: "border-amber-200 bg-amber-50 text-amber-900",
-  gap: "border-rose-200 bg-rose-50 text-rose-800",
+const traceStyles: Record<TraceStatus, string> = {
+  running: "border-blue-200 bg-blue-50 text-blue-800",
+  done: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  failed: "border-rose-200 bg-rose-50 text-rose-800",
 };
 
-const evidenceStyles: Record<EvidenceStatus, string> = {
+const reviewStateStyles: Record<ReviewState, string> = {
+  ready: "border-slate-200 bg-slate-50 text-slate-700",
+  running: "border-blue-200 bg-blue-50 text-blue-800",
+  done: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  failed: "border-rose-200 bg-rose-50 text-rose-800",
+};
+
+const evidenceStyles: Record<EvidenceCard["status"], string> = {
   matched: "border-emerald-200 bg-emerald-50 text-emerald-800",
   partial: "border-blue-200 bg-blue-50 text-blue-800",
   missing: "border-slate-200 bg-slate-100 text-slate-700",
   blocked: "border-rose-200 bg-rose-50 text-rose-800",
 };
 
-function EvidenceStatusBadge({ status }: { status: EvidenceStatus }) {
-  const labelByStatus: Record<EvidenceStatus, string> = {
-    matched: "Matched",
-    partial: "Partial",
-    missing: "Missing",
-    blocked: "Blocked",
-  };
+const demoInvoiceSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#ffffff"/>
+  <text x="40" y="72" font-family="Arial, sans-serif" font-size="28" fill="#111827">TrialGuard demo invoice</text>
+  <text x="40" y="124" font-family="Arial, sans-serif" font-size="18" fill="#475569">Fixture-backed upload for manual stream testing.</text>
+  <text x="40" y="180" font-family="Arial, sans-serif" font-size="16" fill="#475569">P-101 Visit 3 site fee</text>
+  <text x="40" y="214" font-family="Arial, sans-serif" font-size="16" fill="#475569">P-104 PK blood draw / sample handling</text>
+  <text x="40" y="248" font-family="Arial, sans-serif" font-size="16" fill="#475569">P-105 Endoscopy w/ biopsy</text>
+</svg>`;
 
+function formatFileSize(sizeBytes: number): string {
+  if (sizeBytes < 1024) {
+    return `${sizeBytes} B`;
+  }
+
+  if (sizeBytes < 1024 * 1024) {
+    return `${(sizeBytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function traceStatusLabel(status: TraceStatus): string {
+  if (status === "running") {
+    return "Running";
+  }
+
+  if (status === "done") {
+    return "Done";
+  }
+
+  return "Failed";
+}
+
+function createTraceId(items: TraceItem[]): string {
+  return `${Date.now()}-${items.length}`;
+}
+
+function planCount(plans: Record<string, RetrievalPlan>): number {
+  return Object.keys(plans).length;
+}
+
+function firstCode(plan: RetrievalPlan | undefined): string {
+  return plan?.candidateItemCodes[0] ?? "Unplanned";
+}
+
+function normalizeErrorPayload(payload: unknown): string {
+  if (
+    payload &&
+    typeof payload === "object" &&
+    "error" in payload &&
+    typeof payload.error === "string"
+  ) {
+    return payload.error;
+  }
+
+  return "Agent review request failed.";
+}
+
+function yieldToBrowser(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+}
+
+function EvidenceStatusBadge({ status }: { status: EvidenceCard["status"] }) {
   return (
     <span
       className={`rounded border px-2 py-1 text-xs font-semibold ${evidenceStyles[status]}`}
     >
-      {labelByStatus[status]}
+      {status}
     </span>
   );
 }
 
-function BoundaryBadge({
-  boundary,
-  tone,
-}: {
-  boundary: string;
-  tone: BoundaryTone;
-}) {
+function TraceBadge({ status }: { status: TraceStatus }) {
   return (
     <span
-      className={`inline-flex rounded border px-3 py-1.5 text-xs font-semibold ${boundaryStyles[tone]}`}
+      className={`rounded border px-2 py-1 text-xs font-semibold ${traceStyles[status]}`}
     >
-      {boundary}
+      {traceStatusLabel(status)}
     </span>
+  );
+}
+
+function ReviewStateBadge({ state }: { state: ReviewState }) {
+  const labelByState: Record<ReviewState, string> = {
+    ready: "Ready",
+    running: "Running",
+    done: "Done",
+    failed: "Failed",
+  };
+
+  return (
+    <span
+      className={`rounded border px-2 py-1 text-xs font-semibold ${reviewStateStyles[state]}`}
+    >
+      {labelByState[state]}
+    </span>
+  );
+}
+
+function QueryList({ title, queries }: { title: string; queries: string[] }) {
+  return (
+    <div className="rounded border border-slate-200 bg-white p-3">
+      <h4 className="text-xs font-semibold uppercase text-slate-500">{title}</h4>
+      {queries.length > 0 ? (
+        <ul className="mt-2 space-y-2">
+          {queries.map((query) => (
+            <li
+              className="rounded bg-slate-50 px-2 py-1.5 text-sm leading-5 text-slate-700"
+              key={query}
+            >
+              {query}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-slate-500">No query emitted.</p>
+      )}
+    </div>
+  );
+}
+
+function EmptyPanel({ title, text }: { title: string; text: string }) {
+  return (
+    <div className="rounded border border-dashed border-slate-300 bg-slate-50 p-4">
+      <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
+      <p className="mt-2 text-sm leading-6 text-slate-600">{text}</p>
+    </div>
   );
 }
 
 export function ClinTrialWorkspace() {
-  const [selectedLineId, setSelectedLineId] = useState(invoiceLines[0].id);
+  const [mode, setMode] = useState<AgentReviewMode>("demo");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [runId, setRunId] = useState<string | null>(null);
+  const [traceItems, setTraceItems] = useState<TraceItem[]>([]);
+  const [invoiceLines, setInvoiceLines] = useState<InvoiceLine[]>([]);
+  const [retrievalPlans, setRetrievalPlans] =
+    useState<Record<string, RetrievalPlan>>(emptyRetrievalPlans);
+  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
+  const [evidenceByLineId, setEvidenceByLineId] = useState<
+    Record<string, EvidenceCard[]>
+  >({});
+  const [summary, setSummary] = useState<string | null>(null);
+  const [result, setResult] = useState<AgentReviewResult | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   const selectedLine =
-    invoiceLines.find((line) => line.id === selectedLineId) ?? invoiceLines[0];
+    invoiceLines.find((line) => line.id === selectedLineId) ??
+    invoiceLines[0] ??
+    null;
+  const selectedPlan = selectedLine ? retrievalPlans[selectedLine.id] : undefined;
+  const selectedEvidence = selectedLine
+    ? (evidenceByLineId[selectedLine.id] ?? [])
+    : [];
+  const completedPlanCount = planCount(retrievalPlans);
+  const reviewState: ReviewState = errorMessage
+    ? "failed"
+    : isRunning
+      ? "running"
+      : result
+        ? "done"
+        : "ready";
+
+  function appendTrace(
+    label: string,
+    status: TraceStatus,
+    detail?: string,
+  ): void {
+    setTraceItems((items) => [
+      ...items,
+      {
+        id: createTraceId(items),
+        label,
+        status,
+        detail,
+      },
+    ]);
+  }
+
+  function resetRunState(): void {
+    setRunId(null);
+    setTraceItems([]);
+    setInvoiceLines([]);
+    setRetrievalPlans(emptyRetrievalPlans);
+    setSelectedLineId(null);
+    setEvidenceByLineId({});
+    setSummary(null);
+    setResult(null);
+    setErrorMessage(null);
+  }
+
+  function handleAgentEvent(event: AgentEvent): void {
+    if (event.type === "started") {
+      setRunId(event.runId);
+      appendTrace("Run started", "running", event.runId);
+      return;
+    }
+
+    if (event.type === "step") {
+      appendTrace(event.label, event.status);
+      return;
+    }
+
+    if (event.type === "extraction") {
+      setInvoiceLines(event.lines);
+      setSelectedLineId((currentLineId) => currentLineId ?? event.lines[0]?.id ?? null);
+      appendTrace("Invoice lines extracted", "done", `${event.lines.length} lines`);
+      return;
+    }
+
+    if (event.type === "retrieval_plan") {
+      setRetrievalPlans((plans) => ({
+        ...plans,
+        [event.lineId]: event.plan,
+      }));
+      appendTrace(
+        "Retrieval plan ready",
+        "done",
+        `${event.lineId}: ${event.plan.candidateItemCodes.join(", ") || "no code"}`,
+      );
+      return;
+    }
+
+    if (event.type === "search") {
+      appendTrace(
+        "Evidence search",
+        "done",
+        `${event.query} | ${event.sources.join(", ")}`,
+      );
+      return;
+    }
+
+    if (event.type === "evidence") {
+      setEvidenceByLineId((items) => ({
+        ...items,
+        [event.lineId]: event.evidence,
+      }));
+      appendTrace("Evidence packet ready", "done", `${event.evidence.length} cards`);
+      return;
+    }
+
+    if (event.type === "decision") {
+      appendTrace(
+        "Boundary recommendation ready",
+        "done",
+        event.recommendation.boundary,
+      );
+      return;
+    }
+
+    if (event.type === "summary") {
+      setSummary(event.text);
+      appendTrace("Reviewer summary ready", "done");
+      return;
+    }
+
+    if (event.type === "error") {
+      setErrorMessage(event.message);
+      appendTrace("Agent error", "failed", event.message);
+      return;
+    }
+
+    setResult(event.result);
+    setRetrievalPlans(event.result.retrievalPlans ?? emptyRetrievalPlans);
+    appendTrace("Review stream complete", "done", event.result.completedAt);
+  }
+
+  async function readAgentStream(response: Response): Promise<void> {
+    if (!response.body) {
+      throw new Error("Agent review stream was empty.");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      const lines = buffer.split("\n");
+
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmedLine = line.trim();
+
+        if (trimmedLine.length === 0) {
+          continue;
+        }
+
+        handleAgentEvent(JSON.parse(trimmedLine) as AgentEvent);
+        await yieldToBrowser();
+      }
+
+      if (done) {
+        break;
+      }
+    }
+
+    const finalLine = buffer.trim();
+
+    if (finalLine.length > 0) {
+      handleAgentEvent(JSON.parse(finalLine) as AgentEvent);
+      await yieldToBrowser();
+    }
+  }
+
+  async function startReview(): Promise<void> {
+    if (!selectedFile) {
+      setErrorMessage("Choose an invoice file before starting review.");
+      return;
+    }
+
+    abortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    resetRunState();
+    setIsRunning(true);
+    appendTrace("Upload queued", "running", selectedFile.name);
+
+    const formData = new FormData();
+    formData.append("invoice", selectedFile);
+    formData.append("mode", mode);
+
+    try {
+      appendTrace("POST /api/agent-review", "running", mode);
+      const response = await fetch("/api/agent-review", {
+        method: "POST",
+        body: formData,
+        signal: abortController.signal,
+      });
+
+      if (!response.ok) {
+        let payload: unknown = null;
+
+        try {
+          payload = await response.json();
+        } catch {
+          payload = null;
+        }
+
+        throw new Error(normalizeErrorPayload(payload));
+      }
+
+      appendTrace("Backend stream connected", "running");
+      await readAgentStream(response);
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        appendTrace("Review canceled", "failed");
+        return;
+      }
+
+      const message =
+        error instanceof Error ? error.message : "Agent review request failed.";
+      setErrorMessage(message);
+      appendTrace("Request failed", "failed", message);
+    } finally {
+      if (abortControllerRef.current === abortController) {
+        abortControllerRef.current = null;
+      }
+
+      setIsRunning(false);
+    }
+  }
+
+  function cancelReview(): void {
+    abortControllerRef.current?.abort();
+  }
+
+  function useDemoInvoice(): void {
+    setSelectedFile(
+      new File([demoInvoiceSvg], "mock_site_invoice_scan.svg", {
+        type: "image/svg+xml",
+      }),
+    );
+    setErrorMessage(null);
+  }
 
   return (
-    <main className="min-h-dvh bg-[#f4f6f8] text-ink">
+    <main className="min-h-dvh bg-[#f4f6f8] text-slate-950">
       <div className="mx-auto flex min-h-dvh w-full max-w-[1440px] flex-col px-4 py-5 sm:px-6 lg:px-8">
         <header className="mb-5 flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm font-semibold uppercase text-slate-500">
-              ClinTrial
+              TrialGuard
             </p>
             <h1 className="mt-2 text-3xl font-bold leading-tight text-slate-950 sm:text-4xl">
-              Payment evidence review
+              Invoice evidence agent
             </h1>
-            <p className="mt-3 max-w-3xl text-base leading-7 text-slate-600">
-              Read-only governance workspace for uploaded clinical trial site
-              invoices, extracted line items, evidence retrieval, and automation
-              boundary recommendations.
-            </p>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-center sm:min-w-[360px]">
+          <div className="grid grid-cols-3 gap-2 text-center sm:min-w-[420px]">
             <div className="rounded border border-slate-200 bg-white px-3 py-2">
-              <div className="text-xl font-bold text-slate-950">6</div>
+              <div className="text-xl font-bold tabular-nums text-slate-950">
+                {invoiceLines.length}
+              </div>
               <div className="text-xs font-medium text-slate-500">Lines</div>
             </div>
             <div className="rounded border border-slate-200 bg-white px-3 py-2">
-              <div className="text-xl font-bold text-amber-700">3</div>
-              <div className="text-xs font-medium text-slate-500">Review</div>
+              <div className="text-xl font-bold tabular-nums text-blue-700">
+                {completedPlanCount}
+              </div>
+              <div className="text-xs font-medium text-slate-500">Plans</div>
             </div>
             <div className="rounded border border-slate-200 bg-white px-3 py-2">
-              <div className="text-xl font-bold text-rose-700">1</div>
-              <div className="text-xs font-medium text-slate-500">Gap</div>
+              <div
+                className={`text-xl font-bold tabular-nums ${
+                  reviewState === "failed"
+                    ? "text-rose-700"
+                    : reviewState === "running"
+                      ? "text-blue-700"
+                      : reviewState === "done"
+                        ? "text-emerald-700"
+                        : "text-slate-700"
+                }`}
+              >
+                {reviewState === "running"
+                  ? "Run"
+                  : reviewState === "done"
+                    ? "Done"
+                    : reviewState === "failed"
+                      ? "Fail"
+                      : "Ready"}
+              </div>
+              <div className="text-xs font-medium text-slate-500">State</div>
             </div>
           </div>
         </header>
 
         <section
-          aria-label="ClinTrial invoice review workspace"
-          className="grid flex-1 gap-4 lg:grid-cols-[minmax(280px,0.95fr)_minmax(360px,1.2fr)_minmax(320px,0.9fr)]"
+          aria-label="TrialGuard review workspace"
+          className="grid flex-1 gap-4 lg:grid-cols-[minmax(300px,0.85fr)_minmax(380px,1.2fr)_minmax(320px,0.95fr)]"
         >
-          <section className="min-h-[420px] rounded-lg border border-slate-200 bg-white">
+          <section className="min-h-[520px] rounded-lg border border-slate-200 bg-white">
             <div className="border-b border-slate-200 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold text-slate-950">
-                    Uploaded invoice
+                    Upload
                   </h2>
                   <p className="mt-1 text-sm text-slate-500">
-                    INV-SITE-PARIS-2026-0042
+                    /api/agent-review
                   </p>
                 </div>
-                <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600">
-                  OCR ready
-                </span>
+                <ReviewStateBadge state={reviewState} />
               </div>
-              <div className="mt-4 rounded border border-dashed border-slate-300 bg-slate-50 p-3">
-                <div className="aspect-[5/3] rounded bg-white p-3 shadow-sm">
-                  <div className="mb-3 h-5 w-32 rounded bg-slate-800" />
-                  <div className="space-y-2">
-                    <div className="h-2 w-full rounded bg-slate-200" />
-                    <div className="h-2 w-5/6 rounded bg-slate-200" />
-                    <div className="h-2 w-4/6 rounded bg-slate-200" />
-                  </div>
-                  <div className="mt-5 grid grid-cols-[40px_1fr_80px] gap-2">
-                    {invoiceLines.slice(0, 5).map((line) => (
-                      <div className="contents" key={line.id}>
-                        <div className="h-2 rounded bg-slate-300" />
-                        <div className="h-2 rounded bg-slate-200" />
-                        <div className="h-2 rounded bg-slate-300" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
 
-            <div className="space-y-2 p-3">
-              {invoiceLines.map((line) => {
-                const isSelected = line.id === selectedLine.id;
+              <div className="mt-4 space-y-3">
+                <label
+                  className="block text-sm font-semibold text-slate-700"
+                  htmlFor="invoice-file"
+                >
+                  Invoice file
+                </label>
+                <input
+                  accept="image/svg+xml,image/png,image/jpeg,application/pdf"
+                  className="block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded file:border-0 file:bg-slate-950 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                  disabled={isRunning}
+                  id="invoice-file"
+                  onChange={(event) => {
+                    setSelectedFile(event.target.files?.[0] ?? null);
+                    setErrorMessage(null);
+                  }}
+                  type="file"
+                />
 
-                return (
+                <button
+                  className="min-h-10 w-full rounded border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  disabled={isRunning}
+                  onClick={useDemoInvoice}
+                  type="button"
+                >
+                  Use demo invoice
+                </button>
+
+                <div className="grid grid-cols-[1fr_auto] gap-3">
+                  <select
+                    aria-label="Review mode"
+                    className="min-h-11 rounded border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    disabled={isRunning}
+                    onChange={(event) => setMode(event.target.value as AgentReviewMode)}
+                    value={mode}
+                  >
+                    <option value="demo">demo</option>
+                    <option value="strict">strict</option>
+                  </select>
                   <button
-                    aria-pressed={isSelected}
-                    className={`w-full cursor-pointer rounded border p-3 text-left transition hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      isSelected
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-slate-200 bg-white"
-                    }`}
-                    key={line.id}
-                    onClick={() => setSelectedLineId(line.id)}
+                    className="min-h-11 rounded bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    disabled={!selectedFile || isRunning}
+                    onClick={startReview}
                     type="button"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold text-slate-950">
-                          Line {line.lineNumber} - {line.patientId}
-                        </div>
-                        <div className="mt-1 text-sm text-slate-600">
-                          {line.itemName}
-                        </div>
-                      </div>
-                      <div className="text-right text-sm font-semibold tabular-nums text-slate-950">
-                        {line.amount}
-                      </div>
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <BoundaryBadge
-                        boundary={line.boundary}
-                        tone={line.boundaryTone}
-                      />
-                    </div>
+                    Start review
                   </button>
-                );
-              })}
-            </div>
-          </section>
+                </div>
 
-          <section className="min-h-[420px] rounded-lg border border-slate-200 bg-white">
-            <div className="border-b border-slate-200 p-4">
-              <p className="text-sm font-semibold uppercase text-slate-500">
-                Evidence packet
-              </p>
-              <h2 className="mt-2 text-xl font-bold text-slate-950">
-                {selectedLine.itemCode}
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                {selectedLine.rawDescription}
-              </p>
-            </div>
+                {isRunning ? (
+                  <button
+                    className="min-h-10 w-full rounded border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
+                    onClick={cancelReview}
+                    type="button"
+                  >
+                    Cancel
+                  </button>
+                ) : null}
 
-            <div className="space-y-3 p-4">
-              {selectedLine.evidence.map((evidence) => (
-                <article
-                  className="rounded border border-slate-200 bg-white p-4"
-                  key={`${selectedLine.id}-${evidence.title}`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-slate-950">
-                        {evidence.title}
-                      </h3>
-                      <p className="mt-1 text-xs font-medium text-slate-500">
-                        {evidence.source}
-                      </p>
+                {selectedFile ? (
+                  <div className="rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                    <div className="font-semibold text-slate-900">
+                      {selectedFile.name}
                     </div>
-                    <EvidenceStatusBadge status={evidence.status} />
+                    <div className="mt-1">
+                      {selectedFile.type || "unknown"} |{" "}
+                      {formatFileSize(selectedFile.size)}
+                    </div>
                   </div>
-                  <p className="mt-3 text-sm leading-6 text-slate-700">
-                    {evidence.detail}
-                  </p>
-                </article>
-              ))}
-            </div>
-          </section>
+                ) : null}
 
-          <section className="min-h-[420px] rounded-lg border border-slate-200 bg-white">
-            <div className="border-b border-slate-200 p-4">
-              <p className="text-sm font-semibold uppercase text-slate-500">
-                Boundary recommendation
-              </p>
-              <div className="mt-3">
-                <BoundaryBadge
-                  boundary={selectedLine.boundary}
-                  tone={selectedLine.boundaryTone}
-                />
+                {errorMessage ? (
+                  <div className="rounded border border-rose-200 bg-rose-50 p-3 text-sm font-medium text-rose-800">
+                    {errorMessage}
+                  </div>
+                ) : null}
               </div>
             </div>
 
-            <div className="space-y-5 p-4">
-              <div>
-                <div className="mb-2 flex items-center justify-between text-sm">
-                  <span className="font-semibold text-slate-700">
-                    Evidence quality
+            <div className="p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <h2 className="text-base font-semibold text-slate-950">
+                  Agent trace
+                </h2>
+                {runId ? (
+                  <span className="max-w-[180px] truncate rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">
+                    {runId}
                   </span>
-                  <span className="font-bold tabular-nums text-slate-950">
-                    {selectedLine.score}/100
-                  </span>
-                </div>
-                <div className="h-3 rounded bg-slate-100">
-                  <div
-                    className={`h-3 rounded ${
-                      selectedLine.boundaryTone === "auto"
-                        ? "bg-emerald-500"
-                        : selectedLine.boundaryTone === "confirm"
-                          ? "bg-blue-500"
-                          : selectedLine.boundaryTone === "review"
-                            ? "bg-amber-500"
-                            : "bg-rose-500"
-                    }`}
-                    style={{ width: `${selectedLine.score}%` }}
-                  />
-                </div>
+                ) : null}
               </div>
 
-              <div>
-                <h3 className="text-sm font-semibold text-slate-950">
-                  Decision rationale
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-slate-700">
-                  {selectedLine.decisionReason}
-                </p>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-semibold text-slate-950">
-                  Audit trail draft
-                </h3>
-                <ol className="mt-3 space-y-3">
-                  {selectedLine.auditTrail.map((entry, index) => (
+              {traceItems.length > 0 ? (
+                <ol className="space-y-2">
+                  {traceItems.map((item, index) => (
                     <li
-                      className="grid grid-cols-[28px_1fr] gap-3 text-sm leading-6 text-slate-700"
-                      key={entry}
+                      className="grid grid-cols-[28px_1fr] gap-3 rounded border border-slate-200 bg-white p-3"
+                      key={item.id}
                     >
                       <span className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600">
                         {index + 1}
                       </span>
-                      <span>{entry}</span>
+                      <div className="min-w-0">
+                        <div className="flex items-start justify-between gap-3">
+                          <h3 className="text-sm font-semibold text-slate-950">
+                            {item.label}
+                          </h3>
+                          <TraceBadge status={item.status} />
+                        </div>
+                        {item.detail ? (
+                          <p className="mt-2 break-words text-sm leading-5 text-slate-600">
+                            {item.detail}
+                          </p>
+                        ) : null}
+                      </div>
                     </li>
                   ))}
                 </ol>
+              ) : (
+                <EmptyPanel
+                  text="No run has started in this browser session."
+                  title="Waiting"
+                />
+              )}
+            </div>
+          </section>
+
+          <section className="min-h-[520px] rounded-lg border border-slate-200 bg-white">
+            <div className="border-b border-slate-200 p-4">
+              <p className="text-sm font-semibold uppercase text-slate-500">
+                Extracted lines
+              </p>
+              <h2 className="mt-2 text-xl font-bold text-slate-950">
+                {selectedLine ? `Line ${selectedLine.lineNumber}` : "No line selected"}
+              </h2>
+            </div>
+
+            <div className="grid gap-4 p-4 xl:grid-cols-[minmax(220px,0.8fr)_minmax(260px,1fr)]">
+              <div className="space-y-2">
+                {invoiceLines.length > 0 ? (
+                  invoiceLines.map((line) => {
+                    const isSelected = line.id === selectedLine?.id;
+                    const linePlan = retrievalPlans[line.id];
+
+                    return (
+                      <button
+                        aria-pressed={isSelected}
+                        className={`w-full rounded border p-3 text-left transition hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          isSelected
+                            ? "border-blue-500 bg-blue-50"
+                            : "border-slate-200 bg-white"
+                        }`}
+                        key={line.id}
+                        onClick={() => setSelectedLineId(line.id)}
+                        type="button"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-slate-950">
+                              {line.patientId} | {line.visitName}
+                            </div>
+                            <div className="mt-1 truncate text-sm text-slate-600">
+                              {line.rawDescription}
+                            </div>
+                          </div>
+                          <div className="text-right text-sm font-semibold tabular-nums text-slate-950">
+                            EUR {line.amount}
+                          </div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600">
+                            {(line.extractionConfidence * 100).toFixed(0)}%
+                          </span>
+                          <span className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-800">
+                            {firstCode(linePlan)}
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })
+                ) : (
+                  <EmptyPanel
+                    text="Upload an invoice to receive fixture extraction results."
+                    title="No extracted lines"
+                  />
+                )}
               </div>
 
-              <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                <label
-                  className="text-sm font-semibold text-slate-950"
-                  htmlFor="reviewer-note"
-                >
-                  Reviewer note
-                </label>
-                <textarea
-                  className="mt-2 min-h-24 w-full resize-none rounded border border-slate-300 bg-white p-3 text-sm leading-6 text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  defaultValue="No payment action taken. Boundary recommendation recorded for finance review."
-                  id="reviewer-note"
-                />
-                <button
-                  className="mt-3 min-h-11 w-full cursor-pointer rounded bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
-                  type="button"
-                >
-                  Save audit note
-                </button>
+              <div>
+                {selectedLine ? (
+                  <div className="space-y-4">
+                    <div className="rounded border border-slate-200 bg-white p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-base font-semibold text-slate-950">
+                            {selectedLine.rawDescription}
+                          </h3>
+                          <p className="mt-2 text-sm text-slate-600">
+                            {selectedLine.patientId} | {selectedLine.visitName}
+                          </p>
+                        </div>
+                        <div className="text-right text-base font-bold tabular-nums text-slate-950">
+                          EUR {selectedLine.amount}
+                        </div>
+                      </div>
+                    </div>
+
+                    {selectedPlan ? (
+                      <div className="space-y-3">
+                        <div className="rounded border border-blue-200 bg-blue-50 p-3">
+                          <h3 className="text-sm font-semibold text-blue-950">
+                            Candidate item codes
+                          </h3>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {selectedPlan.candidateItemCodes.map((code) => (
+                              <span
+                                className="rounded border border-blue-300 bg-white px-2 py-1 text-xs font-semibold text-blue-800"
+                                key={code}
+                              >
+                                {code}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <QueryList
+                          queries={selectedPlan.protocolQueries}
+                          title="Protocol"
+                        />
+                        <QueryList
+                          queries={selectedPlan.budgetQueries}
+                          title="CTA / budget"
+                        />
+                        <QueryList
+                          queries={selectedPlan.coverageQueries}
+                          title="Coverage grid"
+                        />
+                        <QueryList
+                          queries={selectedPlan.siteEvidenceQueries}
+                          title="Site evidence"
+                        />
+                        <QueryList
+                          queries={selectedPlan.ledgerQueries}
+                          title="Prior ledger"
+                        />
+                      </div>
+                    ) : (
+                      <EmptyPanel
+                        text="Retrieval plan events will appear here as the stream advances."
+                        title="Planning"
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <EmptyPanel
+                    text="Extracted invoice lines will populate this panel."
+                    title="Line detail"
+                  />
+                )}
               </div>
+            </div>
+          </section>
+
+          <section className="min-h-[520px] rounded-lg border border-slate-200 bg-white">
+            <div className="border-b border-slate-200 p-4">
+              <p className="text-sm font-semibold uppercase text-slate-500">
+                Evidence and boundary
+              </p>
+              <h2 className="mt-2 text-xl font-bold text-slate-950">
+                Current phase
+              </h2>
+            </div>
+
+            <div className="space-y-4 p-4">
+              {selectedEvidence.length > 0 ? (
+                selectedEvidence.map((evidence) => (
+                  <article
+                    className="rounded border border-slate-200 bg-white p-4"
+                    key={evidence.id}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-slate-950">
+                          {evidence.sourceName}
+                        </h3>
+                        <p className="mt-1 text-xs font-medium text-slate-500">
+                          {evidence.locator}
+                        </p>
+                      </div>
+                      <EvidenceStatusBadge status={evidence.status} />
+                    </div>
+                    <p className="mt-3 text-sm leading-6 text-slate-700">
+                      {evidence.finding}
+                    </p>
+                  </article>
+                ))
+              ) : (
+                <EmptyPanel
+                  text="Phase 5 will rank retrieved evidence cards after local search results are available."
+                  title="Evidence ranker pending"
+                />
+              )}
+
+              <EmptyPanel
+                text="Phase 6 will generate the deterministic automation boundary. The current UI does not fabricate a payment recommendation."
+                title="Boundary evaluator pending"
+              />
+
+              {summary ? (
+                <div className="rounded border border-slate-200 bg-slate-50 p-4">
+                  <h3 className="text-sm font-semibold text-slate-950">
+                    Reviewer summary
+                  </h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-700">{summary}</p>
+                </div>
+              ) : null}
+
+              {result ? (
+                <div className="rounded border border-emerald-200 bg-emerald-50 p-4">
+                  <h3 className="text-sm font-semibold text-emerald-950">
+                    Completed
+                  </h3>
+                  <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <dt className="text-emerald-700">Uploaded</dt>
+                      <dd className="mt-1 font-semibold text-emerald-950">
+                        {result.uploadedInvoice.fileName}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-emerald-700">Mode</dt>
+                      <dd className="mt-1 font-semibold text-emerald-950">
+                        {result.mode}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-emerald-700">Lines</dt>
+                      <dd className="mt-1 font-semibold text-emerald-950">
+                        {result.extractedLines.length}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-emerald-700">Plans</dt>
+                      <dd className="mt-1 font-semibold text-emerald-950">
+                        {planCount(result.retrievalPlans ?? emptyRetrievalPlans)}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              ) : null}
             </div>
           </section>
         </section>
