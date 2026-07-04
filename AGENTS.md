@@ -1,9 +1,9 @@
-# Engineering Rules (WiseGate) - Non-Negotiables
+# Engineering Rules (TrialGuard) - Non-Negotiables
 
-This repo is WiseGate: a full-stack TypeScript app built with Next.js App
+This repo is TrialGuard: a full-stack TypeScript app built with Next.js App
 Router + React + TypeScript.
 
-WiseGate is a guarded decision-governance demo for clinical trial payment and
+TrialGuard is a guarded decision-governance demo for clinical trial payment and
 finance-control workflows. It must stay read-only: it can recommend automation
 boundaries, surface evidence, and draft audit trails, but it must not approve
 payments, release funds, or mutate real financial/clinical systems.

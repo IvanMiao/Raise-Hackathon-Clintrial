@@ -29,7 +29,7 @@ export async function requestInference(prompt: string): Promise<string> {
       {
         role: "system",
         content:
-          "You are WiseGate, a read-only clinical trial payment governance assistant. Recommend review boundaries and evidence needs, but never approve payments or release funds.",
+          "You are TrialGuard, a read-only clinical trial payment governance assistant. Recommend review boundaries and evidence needs, but never approve payments or release funds.",
       },
       {
         role: "user",
