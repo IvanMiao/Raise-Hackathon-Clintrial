@@ -64,7 +64,7 @@ function Landing() {
                 className="block animate-fade-up font-normal text-foreground"
                 style={{ animationDelay: "260ms" }}
               >
-                Clinical trial sites can't heal
+                Clinical trial sites can&apos;t&nbsp;heal
               </span>
               <span
                 className="block animate-fade-up italic font-normal"
