@@ -1,18 +1,10 @@
 import { useEffect, useRef } from "react";
 
 /**
- * DNA Helix — a clean, editorial double helix.
- *
- * Two sine strands crossing vertically, connected by evenly spaced rungs.
- * Small filled dots (no blur) sit on each strand. A slow rotation phase
- * animates the crossings. A soft luminous band travels upward. Rare warm-gold
- * accents dot the strand. Everything reads as structure first, motion second.
+ * Elegant DNA double helix — cream editorial aesthetic.
+ * Two strands (forest + charcoal), warm-gray rungs, subtle depth via perspective,
+ * periodic light pulse traveling upward, gentle float, faint ambient particles.
  */
-
-const FOREST = "#2D4F3F";
-const CHARCOAL = "#1a1a1a";
-const GOLD = "#b8956a";
-
 export function DnaHelix() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -23,148 +15,236 @@ export function DnaHelix() {
     if (!ctx) return;
 
     const parent = canvas.parentElement!;
-    let W = 0;
-    let H = 0;
+    let width = 0;
+    let height = 0;
     let dpr = Math.max(1, window.devicePixelRatio || 1);
-    let raf = 0;
-    const t0 = performance.now();
 
     const resize = () => {
       const rect = parent.getBoundingClientRect();
-      W = Math.max(1, rect.width);
-      H = Math.max(1, rect.height);
+      width = rect.width;
+      height = rect.height;
       dpr = Math.max(1, window.devicePixelRatio || 1);
-      canvas.width = Math.floor(W * dpr);
-      canvas.height = Math.floor(H * dpr);
-      canvas.style.width = `${W}px`;
-      canvas.style.height = `${H}px`;
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     resize();
-
-    let roTimer: number | null = null;
-    const ro = new ResizeObserver(() => {
-      if (roTimer) return;
-      roTimer = window.setTimeout(() => {
-        roTimer = null;
-        resize();
-      }, 60);
-    });
+    const ro = new ResizeObserver(resize);
     ro.observe(parent);
 
-    const frame = (now: number) => {
-      const t = (now - t0) / 1000;
+    // Colors
+    const forest = "#2D4F3F";
+    const charcoal = "#1a1a1a";
+    const rungColor = "#d5d0ca";
 
-      ctx.clearRect(0, 0, W, H);
+    // Particles
+    type P = { x: number; y: number; vy: number; r: number; a: number };
+    const particles: P[] = [];
+    const seedParticles = () => {
+      particles.length = 0;
+      const count = 18;
+      for (let i = 0; i < count; i++) {
+        particles.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          vy: 0.15 + Math.random() * 0.35,
+          r: 0.6 + Math.random() * 1.2,
+          a: 0.12 + Math.random() * 0.18,
+        });
+      }
+    };
+    seedParticles();
+
+    let phase = 0;
+    let raf = 0;
+    const start = performance.now();
+
+    // Pulses traveling upward (progress 0->1 along helix, bottom to top)
+    const pulses: { progress: number; speed: number }[] = [];
+    let nextPulseAt = 1500;
+
+    const draw = (now: number) => {
+      const t = now - start;
+      ctx.clearRect(0, 0, width, height);
 
       // Helix geometry
-      const cx = W / 2;
-      const topPad = H * 0.06;
-      const botPad = H * 0.06;
-      const helixH = H - topPad - botPad;
-      const amp = Math.min(W * 0.32, 190); // strand horizontal amplitude
-      const turns = 3.2; // vertical turns visible
-      const phase = t * 0.55; // slow rotation
+      const cx = width / 2;
+      const topPad = Math.min(60, height * 0.06);
+      const botPad = Math.min(60, height * 0.06);
+      const yTop = topPad;
+      const yBot = height - botPad;
+      const helixH = yBot - yTop;
+      const float = Math.sin(t * 0.0006) * 3; // gentle drift
 
-      const N = 220; // samples per strand
-      const strandA: { x: number; y: number; z: number }[] = [];
-      const strandB: { x: number; y: number; z: number }[] = [];
+      const amplitude = Math.min(width * 0.28, 140);
+      const turns = 3.2;
+      const segments = Math.max(90, Math.floor(helixH / 5));
 
-      for (let i = 0; i <= N; i++) {
-        const u = i / N; // 0..1 top->bottom
-        const y = topPad + u * helixH;
-        const theta = u * Math.PI * 2 * turns + phase;
-        const xa = cx + Math.sin(theta) * amp;
-        const xb = cx + Math.sin(theta + Math.PI) * amp;
-        const za = Math.cos(theta); // -1..1  (depth)
-        const zb = Math.cos(theta + Math.PI);
-        strandA.push({ x: xa, y, z: za });
-        strandB.push({ x: xb, y, z: zb });
+      // Build points for each strand
+      type Node = {
+        x: number;
+        y: number;
+        depth: number; // -1 (back) .. 1 (front)
+        strand: 0 | 1;
+        idx: number;
+      };
+      const nodes: Node[] = [];
+      for (let i = 0; i <= segments; i++) {
+        const u = i / segments;
+        const y = yTop + u * helixH + float;
+        const theta = u * turns * Math.PI * 2 + phase;
+        // strand A
+        const xA = cx + Math.sin(theta) * amplitude;
+        const dA = Math.cos(theta);
+        // strand B (opposite)
+        const xB = cx + Math.sin(theta + Math.PI) * amplitude;
+        const dB = Math.cos(theta + Math.PI);
+        nodes.push({ x: xA, y, depth: dA, strand: 0, idx: i });
+        nodes.push({ x: xB, y, depth: dB, strand: 1, idx: i });
       }
 
-      // Luminous band traveling upward
-      const bandU = 1 - ((t * 0.14) % 1);
-      const bandY = topPad + bandU * helixH;
-      const bandRange = helixH * 0.22;
-
-      // --- Rungs (draw before strand dots so dots sit on top) ---
-      const RUNGS = 46;
-      for (let i = 0; i < RUNGS; i++) {
-        const u = i / (RUNGS - 1);
-        const idx = Math.round(u * N);
-        const a = strandA[idx];
-        const b = strandB[idx];
-        // Depth of the rung midpoint: fade rungs at the "back"
-        const zMid = (a.z + b.z) / 2;
-        const depth = (zMid + 1) / 2; // 0 back .. 1 front
-        const near = Math.abs(a.y - bandY) / bandRange;
-        const glow = Math.max(0, 1 - near);
-
-        const baseAlpha = 0.08 + depth * 0.28;
-        const alpha = Math.min(0.7, baseAlpha + glow * 0.35);
-
-        ctx.strokeStyle = rgba(FOREST, alpha);
-        ctx.lineWidth = 0.6 + depth * 0.7 + glow * 0.6;
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
+      // Draw rungs first (base pairs) every N segments — but sort by depth mid so overlap looks right
+      const rungStep = 4;
+      type Rung = { a: Node; b: Node; midDepth: number };
+      const rungs: Rung[] = [];
+      for (let i = 0; i <= segments; i += rungStep) {
+        const a = nodes[i * 2];
+        const b = nodes[i * 2 + 1];
+        rungs.push({ a, b, midDepth: (a.depth + b.depth) / 2 });
       }
 
-      // --- Strand dots ---
-      const drawStrand = (strand: typeof strandA, tint: string) => {
-        for (let i = 0; i <= N; i++) {
-          const p = strand[i];
-          const depth = (p.z + 1) / 2; // 0 back .. 1 front
-          const near = Math.abs(p.y - bandY) / bandRange;
-          const glow = Math.max(0, 1 - near);
-
-          const r = 0.9 + depth * 2.0 + glow * 1.6;
-          const alpha = 0.18 + depth * 0.62 + glow * 0.2;
-
-          ctx.fillStyle = rgba(tint, Math.min(1, alpha));
+      // Draw strands as continuous polylines split by depth bands for layering
+      // Simpler: draw back-half then front-half using per-segment depth
+      const drawStrand = (strandIdx: 0 | 1, color: string, pass: "back" | "front") => {
+        ctx.lineCap = "round";
+        for (let i = 0; i < segments; i++) {
+          const p0 = nodes[i * 2 + strandIdx];
+          const p1 = nodes[(i + 1) * 2 + strandIdx];
+          const d = (p0.depth + p1.depth) / 2;
+          const isFront = d >= 0;
+          if (pass === "back" && isFront) continue;
+          if (pass === "front" && !isFront) continue;
+          const depthN = (d + 1) / 2; // 0..1
+          const w = 1.4 + depthN * 2.6;
+          const alpha = 0.25 + depthN * 0.75;
+          ctx.strokeStyle = withAlpha(color, alpha);
+          ctx.lineWidth = w;
           ctx.beginPath();
-          ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.moveTo(p0.x, p0.y);
+          ctx.lineTo(p1.x, p1.y);
+          ctx.stroke();
+        }
+      };
 
-          // Rare gold accent
-          if (i % 37 === 0 && glow > 0.15) {
-            ctx.fillStyle = rgba(GOLD, 0.6 * glow);
+      // Rungs pass helper
+      const drawRungs = (pass: "back" | "front") => {
+        for (const r of rungs) {
+          const isFront = r.midDepth >= 0;
+          if (pass === "back" && isFront) continue;
+          if (pass === "front" && !isFront) continue;
+          const depthN = (r.midDepth + 1) / 2;
+          const alpha = 0.15 + depthN * 0.45;
+          ctx.strokeStyle = withAlpha(rungColor, alpha);
+          ctx.lineWidth = 0.8 + depthN * 1.2;
+          ctx.beginPath();
+          ctx.moveTo(r.a.x, r.a.y);
+          ctx.lineTo(r.b.x, r.b.y);
+          ctx.stroke();
+        }
+      };
+
+      // Nodes at rung connection points
+      const drawNodes = (pass: "back" | "front", pulseYs: number[]) => {
+        for (const r of rungs) {
+          for (const p of [r.a, r.b]) {
+            const isFront = p.depth >= 0;
+            if (pass === "back" && isFront) continue;
+            if (pass === "front" && !isFront) continue;
+            const depthN = (p.depth + 1) / 2;
+            const baseR = 1.4 + depthN * 2.6;
+            const color = p.strand === 0 ? forest : charcoal;
+
+            // Pulse boost: if near any pulse Y
+            let pulseBoost = 0;
+            for (const py of pulseYs) {
+              const dy = Math.abs(p.y - py);
+              if (dy < 40) pulseBoost = Math.max(pulseBoost, 1 - dy / 40);
+            }
+
+            // Glow when at front
+            if (depthN > 0.75 || pulseBoost > 0.1) {
+              const glowR = baseR * (3 + pulseBoost * 4);
+              const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, glowR);
+              const glowAlpha = 0.18 * (depthN - 0.5) + pulseBoost * 0.55;
+              g.addColorStop(0, withAlpha(color, Math.max(0, glowAlpha)));
+              g.addColorStop(1, withAlpha(color, 0));
+              ctx.fillStyle = g;
+              ctx.beginPath();
+              ctx.arc(p.x, p.y, glowR, 0, Math.PI * 2);
+              ctx.fill();
+            }
+
+            ctx.fillStyle = withAlpha(color, 0.35 + depthN * 0.65);
             ctx.beginPath();
-            ctx.arc(p.x, p.y, r * 1.6, 0, Math.PI * 2);
+            ctx.arc(p.x, p.y, baseR + pulseBoost * 1.4, 0, Math.PI * 2);
             ctx.fill();
           }
         }
       };
 
-      drawStrand(strandA, CHARCOAL);
-      drawStrand(strandB, FOREST);
+      // Ambient particles (behind)
+      for (const p of particles) {
+        p.y -= p.vy;
+        if (p.y < -4) {
+          p.y = height + 4;
+          p.x = Math.random() * width;
+        }
+        ctx.fillStyle = withAlpha("#2D4F3F", p.a);
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
-      // --- Luminous band highlight (soft horizontal wash) ---
-      const bandGrad = ctx.createRadialGradient(cx, bandY, 0, cx, bandY, amp * 1.6);
-      bandGrad.addColorStop(0, rgba(FOREST, 0.10));
-      bandGrad.addColorStop(1, rgba(FOREST, 0));
-      ctx.fillStyle = bandGrad;
-      ctx.beginPath();
-      ctx.arc(cx, bandY, amp * 1.6, 0, Math.PI * 2);
-      ctx.fill();
+      // Update pulses
+      if (t > nextPulseAt) {
+        pulses.push({ progress: 0, speed: 0.00055 + Math.random() * 0.0003 });
+        nextPulseAt = t + 3800 + Math.random() * 2200;
+      }
+      for (let i = pulses.length - 1; i >= 0; i--) {
+        pulses[i].progress += pulses[i].speed * 16;
+        if (pulses[i].progress > 1.1) pulses.splice(i, 1);
+      }
+      const pulseYs = pulses.map((p) => yBot - p.progress * helixH + float);
 
-      raf = requestAnimationFrame(frame);
+      // Layer: back rungs, back strands, front rungs, front strands, then nodes both passes
+      drawRungs("back");
+      drawStrand(0, forest, "back");
+      drawStrand(1, charcoal, "back");
+      drawNodes("back", pulseYs);
+
+      drawRungs("front");
+      drawStrand(0, forest, "front");
+      drawStrand(1, charcoal, "front");
+      drawNodes("front", pulseYs);
+
+      phase += 0.006;
+      raf = requestAnimationFrame(draw);
     };
 
-    raf = requestAnimationFrame(frame);
+    raf = requestAnimationFrame(draw);
 
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
-      if (roTimer) window.clearTimeout(roTimer);
     };
   }, []);
 
-  return <canvas ref={canvasRef} className="block h-full w-full" aria-hidden />;
+  return <canvas ref={canvasRef} className="block h-full w-full" />;
 }
 
-function rgba(hex: string, a: number) {
+function withAlpha(hex: string, a: number) {
   const h = hex.replace("#", "");
   const r = parseInt(h.slice(0, 2), 16);
   const g = parseInt(h.slice(2, 4), 16);
