@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { MoleculeCanvas } from "@/components/MoleculeCanvas";
 import { DnaHelix } from "@/components/DnaHelix";
 
 export const Route = createFileRoute("/")({
