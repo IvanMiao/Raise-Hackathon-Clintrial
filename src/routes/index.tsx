@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MoleculeCanvas } from "@/components/MoleculeCanvas";
 import { DnaHelix } from "@/components/DnaHelix";
+import { ParticleOverlay } from "@/components/ParticleOverlay";
 
 export const Route = createFileRoute("/")({
   component: Landing,
@@ -107,7 +108,7 @@ function Landing() {
             </div>
           </div>
 
-          {/* RIGHT — DNA Helix */}
+          {/* RIGHT — DNA Helix with particle overlay */}
           <div
             className="animate-fade-up relative min-h-0 w-full overflow-hidden"
             style={{ animationDelay: "860ms" }}
@@ -115,6 +116,7 @@ function Landing() {
             <div className="absolute inset-0">
               <DnaHelix />
             </div>
+            <ParticleOverlay />
           </div>
         </section>
       </div>
