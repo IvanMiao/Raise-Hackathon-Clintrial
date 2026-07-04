@@ -50,7 +50,7 @@ export function ParticleOverlay() {
     };
 
     const particles: Particle[] = [];
-    const count = 180;
+    const count = 320;
 
     for (let i = 0; i < count; i++) {
       particles.push({
@@ -58,8 +58,8 @@ export function ParticleOverlay() {
         y: Math.random() * height,
         vx: 0,
         vy: -(0.15 + Math.random() * 0.35),
-        r: 0.5 + Math.random() * 1.6,
-        alpha: 0.12 + Math.random() * 0.22,
+        r: 0.8 + Math.random() * 2.2,
+        alpha: 0.18 + Math.random() * 0.32,
         color: colors[Math.floor(Math.random() * colors.length)],
         phase: Math.random() * Math.PI * 2,
         speed: 0.0004 + Math.random() * 0.0012,
