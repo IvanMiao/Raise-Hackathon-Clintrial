@@ -47,7 +47,7 @@ export function DnaHelix() {
     let nextPulseAt = 1500;
 
     // Tilt around X axis (radians) — gentle so top/bottom read as farther/closer
-    const tiltX = 0.35;
+    const tiltX = 0;
     const sinTx = Math.sin(tiltX);
     const cosTx = Math.cos(tiltX);
 
