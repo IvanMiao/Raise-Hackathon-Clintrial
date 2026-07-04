@@ -192,11 +192,11 @@ export function DnaHelix() {
           ctx.stroke();
         } else {
           const d = depthNorm(it.z);
-          const baseR = (1.4 + d * 2.8) * it.p.scale;
-          if (d > 0.7 || it.pulseBoost > 0.1) {
-            const glowR = baseR * (3 + it.pulseBoost * 4);
+          const baseR = (0.5 + d * 1.0) * it.p.scale;
+          if (d > 0.6 || it.pulseBoost > 0.05) {
+            const glowR = baseR * (2.5 + it.pulseBoost * 3);
             const g = ctx.createRadialGradient(it.p.sx, it.p.sy, 0, it.p.sx, it.p.sy, glowR);
-            const glowAlpha = 0.2 * (d - 0.5) + it.pulseBoost * 0.55;
+            const glowAlpha = 0.12 * d + it.pulseBoost * 0.4;
             g.addColorStop(0, withAlpha(it.color, Math.max(0, glowAlpha)));
             g.addColorStop(1, withAlpha(it.color, 0));
             ctx.fillStyle = g;
@@ -204,9 +204,9 @@ export function DnaHelix() {
             ctx.arc(it.p.sx, it.p.sy, glowR, 0, Math.PI * 2);
             ctx.fill();
           }
-          ctx.fillStyle = withAlpha(it.color, 0.35 + d * 0.65);
+          ctx.fillStyle = withAlpha(it.color, 0.5 + d * 0.5);
           ctx.beginPath();
-          ctx.arc(it.p.sx, it.p.sy, baseR + it.pulseBoost * 1.4, 0, Math.PI * 2);
+          ctx.arc(it.p.sx, it.p.sy, baseR + it.pulseBoost * 0.8, 0, Math.PI * 2);
           ctx.fill();
         }
       }
