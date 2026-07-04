@@ -121,14 +121,12 @@ export function DnaHelix() {
         }
       }
 
-      // Rungs: connect adjacent strands around the ring (0-1, 1-2, ..., last-0)
-      const rungStep = 4;
+      // Rungs: base pairs connecting strand 0 ↔ strand 1 (classic DNA ladder)
+      const rungStep = 3;
       for (let i = 0; i <= segments; i += rungStep) {
-        for (let s = 0; s < STRANDS; s++) {
-          const a = nodes[i * STRANDS + s];
-          const b = nodes[i * STRANDS + ((s + 1) % STRANDS)];
-          items.push({ kind: "rung", z: (a.z + b.z) / 2, a, b });
-        }
+        const a = nodes[i * STRANDS + 0];
+        const b = nodes[i * STRANDS + 1];
+        items.push({ kind: "rung", z: (a.z + b.z) / 2, a, b });
       }
 
       // Update pulses
