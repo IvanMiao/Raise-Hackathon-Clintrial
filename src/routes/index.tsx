@@ -46,7 +46,7 @@ function Landing() {
 
       {/* Content */}
       <div className="relative z-10 flex h-full flex-col">
-        <section className="grid flex-1 grid-cols-1 gap-8 px-6 py-10 sm:px-10 lg:grid-cols-[minmax(0,60%)_minmax(0,40%)] lg:gap-8 lg:px-14 lg:py-12">
+        <section className="grid flex-1 grid-cols-1 gap-6 px-6 py-10 sm:px-10 lg:grid-cols-[minmax(0,55%)_minmax(0,45%)] lg:gap-4 lg:px-14 lg:py-12">
           {/* LEFT — all content */}
           <div className="flex min-h-0 min-w-0 flex-col justify-center gap-5">
             <div
