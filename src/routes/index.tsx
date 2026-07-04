@@ -111,22 +111,6 @@ function Landing() {
           </div>
         </section>
 
-        {/* BOTTOM BAR */}
-        <div
-          className="animate-fade-up absolute inset-x-0 bottom-0 border-t px-6 py-5 sm:px-10 lg:px-14"
-          style={{ animationDelay: "900ms", borderColor: "var(--border)" }}
-        >
-          <div className="flex flex-col items-start justify-between gap-3 md:flex-row md:items-center">
-            <div className="flex items-center gap-2 label-eyebrow">
-              <GreenDot /> Systems // View
-            </div>
-            <ul className="flex flex-wrap items-center gap-x-6 gap-y-2 label-eyebrow">
-              <li>• PROTOCOL GROUNDED</li>
-              <li>• PAYMENT GOVERNANCE</li>
-              <li>• AUDIT-READY</li>
-            </ul>
-          </div>
-        </div>
       </div>
     </main>
   );
