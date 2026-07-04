@@ -43,6 +43,11 @@ function Landing() {
         </span>
       </div>
 
+      {/* Full-page particle layer */}
+      <div className="pointer-events-none absolute inset-0 z-10">
+        <ParticleOverlay />
+      </div>
+
       {/* Content */}
       <div className="relative z-10 flex h-full flex-col">
         <section className="grid flex-1 grid-cols-1 gap-8 px-6 py-10 sm:px-10 lg:grid-cols-[52%_48%] lg:gap-10 lg:px-14 lg:py-12">
@@ -116,7 +121,6 @@ function Landing() {
             <div className="absolute inset-0">
               <DnaHelix />
             </div>
-            <ParticleOverlay />
           </div>
         </section>
       </div>
