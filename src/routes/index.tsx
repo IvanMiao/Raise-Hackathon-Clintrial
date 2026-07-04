@@ -30,8 +30,8 @@ function Landing() {
         <span
           className="font-display italic leading-none select-none whitespace-nowrap -mr-16 md:-mr-24 lg:-mr-32"
           style={{
-            color: "var(--ghost)",
-            fontSize: "clamp(180px, 28vw, 340px)",
+            color: "#f0ede9",
+            fontSize: "clamp(200px, 32vw, 400px)",
             fontWeight: 500,
             transform: "translateY(2%)",
           }}
@@ -44,9 +44,9 @@ function Landing() {
       <div className="relative z-10 flex min-h-screen flex-col">
         {/* NAV */}
         <nav className="flex items-center justify-between px-6 py-6 sm:px-10 lg:px-14 lg:py-8">
-          <div className="animate-fade-up text-[15px]" style={{ animationDelay: "0ms" }}>
-            <span className="font-semibold text-foreground">ClinTrial</span>
-            <span className="text-muted-foreground"> /.</span>
+          <div className="animate-fade-up flex items-baseline gap-1" style={{ animationDelay: "0ms" }}>
+            <span className="font-display text-[18px] font-semibold text-foreground">ClinTrial</span>
+            <span className="text-[16px] text-muted-foreground"> /.</span>
           </div>
           <div
             className="animate-fade-up flex items-center gap-8"
