@@ -209,15 +209,21 @@ function plannerTimeoutMs(): number {
   return defaultPlannerTimeoutMs;
 }
 
-function normalizedLineText(line: InvoiceLine): string {
-  return [
-    line.patientId,
-    line.visitName,
-    line.rawDescription,
-    line.amount,
-  ]
-    .join(" ")
-    .toLowerCase();
+function plannerMaxTokens(): number | undefined {
+  const value = Number(
+    envValue("VULTR_RETRIEVAL_PLANNER_MAX_TOKENS") ??
+      envValue("VULTR_MAX_TOKENS"),
+  );
+
+  if (Number.isInteger(value) && value > 0) {
+    return value;
+  }
+
+  return undefined;
+}
+
+function normalizedItemText(line: InvoiceLine): string {
+  return [line.rawDescription, line.amount].join(" ").toLowerCase();
 }
 
 function matchesHint(lineText: string, hint: ItemCodeHint): boolean {
@@ -266,8 +272,8 @@ function fallbackQueries(line: InvoiceLine): RetrievalPlan {
 }
 
 export function createDeterministicRetrievalPlan(line: InvoiceLine): RetrievalPlan {
-  const lineText = normalizedLineText(line);
-  const matchedHints = itemCodeHints.filter((hint) => matchesHint(lineText, hint));
+  const itemText = normalizedItemText(line);
+  const matchedHints = itemCodeHints.filter((hint) => matchesHint(itemText, hint));
 
   if (matchedHints.length === 0) {
     return fallbackQueries(line);
@@ -483,11 +489,12 @@ export async function createRetrievalPlanForInvoiceLine(
 
   try {
     const client = createVultrClient();
+    const maxTokens = plannerMaxTokens();
     const completion = await client.chat.completions.create(
       {
         model,
         temperature: 0.1,
-        max_tokens: 650,
+        ...(maxTokens === undefined ? {} : { max_tokens: maxTokens }),
         messages: [
           {
             role: "system",

@@ -18,13 +18,26 @@ function createVultrClient() {
   });
 }
 
+function maxTokens(): number | undefined {
+  const value = Number(process.env.VULTR_MAX_TOKENS?.trim());
+
+  if (Number.isInteger(value) && value > 0) {
+    return value;
+  }
+
+  return undefined;
+}
+
 export async function requestInference(prompt: string): Promise<string> {
   const client = createVultrClient();
+  const configuredMaxTokens = maxTokens();
 
   const completion = await client.chat.completions.create({
     model: process.env.VULTR_MODEL ?? defaultModel,
     temperature: 0.2,
-    max_tokens: 700,
+    ...(configuredMaxTokens === undefined
+      ? {}
+      : { max_tokens: configuredMaxTokens }),
     messages: [
       {
         role: "system",

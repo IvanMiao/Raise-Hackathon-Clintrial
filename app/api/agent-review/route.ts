@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { createAgentEventStream } from "@/lib/agent/events";
-import {
-  extractInvoiceLinesFromFixture,
-  InvoiceExtractionError,
-} from "@/lib/agent/invoiceExtraction";
+import { InvoiceExtractionError } from "@/lib/agent/invoiceExtraction";
+import { extractInvoiceLinesFromUpload } from "@/lib/agent/vultrInvoiceExtraction";
 import { createRetrievalPlanForInvoiceLine } from "@/lib/agent/vultrRetrievalPlanner";
 import type {
   AgentReviewMode,
@@ -15,13 +13,19 @@ import type {
 
 export const runtime = "nodejs";
 
-const maxInvoiceFileSizeBytes = 10 * 1024 * 1024;
+const bytesPerMegabyte = 1024 * 1024;
+const maxImageInvoiceFileSizeBytes = 5 * bytesPerMegabyte;
+const maxPdfInvoiceFileSizeBytes = 10 * bytesPerMegabyte;
 const traceDelayMs = 120;
-const allowedInvoiceContentTypes = new Set([
-  "application/pdf",
+const allowedImageInvoiceContentTypes = new Set([
   "image/jpeg",
   "image/png",
   "image/svg+xml",
+  "image/webp",
+]);
+const allowedInvoiceContentTypes = new Set([
+  "application/pdf",
+  ...allowedImageInvoiceContentTypes,
 ]);
 
 type RetrievalPlanResult = Awaited<
@@ -40,6 +44,7 @@ type PendingRetrievalPlan = {
 
 type ValidatedAgentReviewRequest = {
   invoice: UploadedInvoiceSummary;
+  invoiceFile: File;
   mode: AgentReviewMode;
 };
 
@@ -74,6 +79,10 @@ function parseMode(value: FormDataEntryValue | null): AgentReviewMode | null {
   return null;
 }
 
+function isImageInvoiceContentType(contentType: string): boolean {
+  return allowedImageInvoiceContentTypes.has(contentType);
+}
+
 function validateAgentReviewForm(formData: FormData): ValidationResult {
   const invoice = formData.get("invoice");
 
@@ -89,7 +98,7 @@ function validateAgentReviewForm(formData: FormData): ValidationResult {
     return {
       ok: false,
       status: 400,
-      error: "Invoice must be an SVG, PNG, JPEG, or PDF file.",
+      error: "Invoice must be an SVG, PNG, JPEG, WebP, or PDF file.",
     };
   }
 
@@ -101,11 +110,22 @@ function validateAgentReviewForm(formData: FormData): ValidationResult {
     };
   }
 
-  if (invoice.size > maxInvoiceFileSizeBytes) {
+  if (
+    isImageInvoiceContentType(invoice.type) &&
+    invoice.size > maxImageInvoiceFileSizeBytes
+  ) {
     return {
       ok: false,
       status: 413,
-      error: "Invoice file must be 10 MB or smaller.",
+      error: "Image invoice file must be 5 MB or smaller.",
+    };
+  }
+
+  if (invoice.type === "application/pdf" && invoice.size > maxPdfInvoiceFileSizeBytes) {
+    return {
+      ok: false,
+      status: 413,
+      error: "PDF invoice file must be 10 MB or smaller.",
     };
   }
 
@@ -127,6 +147,7 @@ function validateAgentReviewForm(formData: FormData): ValidationResult {
         contentType: invoice.type,
         sizeBytes: invoice.size,
       },
+      invoiceFile: invoice,
       mode,
     },
   };
@@ -173,19 +194,40 @@ export async function POST(request: Request) {
 
     writer.send({
       type: "step",
-      label: "fixture invoice extraction",
+      label: "invoice vision extraction",
       status: "running",
     });
     await pauseTrace();
 
     let extractedLines: InvoiceLine[];
+    let extractionProvider = "vultr_vision";
 
     try {
-      extractedLines = await extractInvoiceLinesFromFixture();
+      const invoiceBytes = new Uint8Array(
+        await validation.request.invoiceFile.arrayBuffer(),
+      );
+      const extraction = await extractInvoiceLinesFromUpload({
+        fileName: validation.request.invoice.fileName,
+        contentType: validation.request.invoice.contentType,
+        bytes: invoiceBytes,
+        mode: validation.request.mode,
+      });
+
+      extractedLines = extraction.lines;
+      extractionProvider = extraction.provider;
+
+      if (extraction.provider === "fixture_fallback") {
+        writer.send({
+          type: "step",
+          label: "invoice vision extraction fallback",
+          status: "done",
+        });
+        await pauseTrace();
+      }
     } catch (error) {
       writer.send({
         type: "step",
-        label: "fixture invoice extraction",
+        label: "invoice vision extraction",
         status: "failed",
       });
       writer.send({
@@ -193,14 +235,17 @@ export async function POST(request: Request) {
         message:
           error instanceof InvoiceExtractionError
             ? error.message
-            : "Demo invoice extraction failed.",
+            : "Invoice extraction failed.",
       });
       return;
     }
 
     writer.send({
       type: "step",
-      label: "fixture invoice extraction",
+      label:
+        extractionProvider === "fixture_fallback"
+          ? "fixture invoice extraction"
+          : "invoice vision extraction",
       status: "done",
     });
     await pauseTrace();

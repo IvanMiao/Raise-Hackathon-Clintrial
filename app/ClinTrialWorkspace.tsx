@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type {
   AgentEvent,
@@ -23,6 +23,8 @@ type TraceItem = {
 };
 
 const emptyRetrievalPlans: Record<string, RetrievalPlan> = {};
+const maxImageUploadSizeBytes = 5 * 1024 * 1024;
+const maxImageUploadSizeLabel = "5 MB";
 
 const traceStyles: Record<TraceStatus, string> = {
   running: "border-blue-200 bg-blue-50 text-blue-800",
@@ -65,6 +67,18 @@ function formatFileSize(sizeBytes: number): string {
   return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function isImageUpload(file: File): boolean {
+  return file.type.startsWith("image/");
+}
+
+function imageUploadSizeError(file: File): string | null {
+  if (isImageUpload(file) && file.size > maxImageUploadSizeBytes) {
+    return `Image uploads must be ${maxImageUploadSizeLabel} or smaller.`;
+  }
+
+  return null;
+}
+
 function traceStatusLabel(status: TraceStatus): string {
   if (status === "running") {
     return "Running";
@@ -75,10 +89,6 @@ function traceStatusLabel(status: TraceStatus): string {
   }
 
   return "Failed";
-}
-
-function createTraceId(items: TraceItem[]): string {
-  return `${Date.now()}-${items.length}`;
 }
 
 function planCount(plans: Record<string, RetrievalPlan>): number {
@@ -177,6 +187,7 @@ function EmptyPanel({ title, text }: { title: string; text: string }) {
 }
 
 export function ClinTrialWorkspace() {
+  const [hasHydrated, setHasHydrated] = useState(false);
   const [mode, setMode] = useState<AgentReviewMode>("demo");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isRunning, setIsRunning] = useState(false);
@@ -193,6 +204,7 @@ export function ClinTrialWorkspace() {
   const [result, setResult] = useState<AgentReviewResult | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const traceIdCounterRef = useRef(0);
 
   const selectedLine =
     invoiceLines.find((line) => line.id === selectedLineId) ??
@@ -210,16 +222,24 @@ export function ClinTrialWorkspace() {
       : result
         ? "done"
         : "ready";
+  const formControlsDisabled = !hasHydrated || isRunning;
+  const canStartReview = hasHydrated && selectedFile !== null && !isRunning;
+
+  useEffect(() => {
+    setHasHydrated(true);
+  }, []);
 
   function appendTrace(
     label: string,
     status: TraceStatus,
     detail?: string,
   ): void {
+    traceIdCounterRef.current += 1;
+
     setTraceItems((items) => [
       ...items,
       {
-        id: createTraceId(items),
+        id: String(traceIdCounterRef.current),
         label,
         status,
         detail,
@@ -358,6 +378,13 @@ export function ClinTrialWorkspace() {
   async function startReview(): Promise<void> {
     if (!selectedFile) {
       setErrorMessage("Choose an invoice file before starting review.");
+      return;
+    }
+
+    const sizeError = imageUploadSizeError(selectedFile);
+
+    if (sizeError) {
+      setErrorMessage(sizeError);
       return;
     }
 
@@ -503,20 +530,36 @@ export function ClinTrialWorkspace() {
                   Invoice file
                 </label>
                 <input
-                  accept="image/svg+xml,image/png,image/jpeg,application/pdf"
+                  accept="image/svg+xml,image/png,image/jpeg,image/webp,application/pdf"
                   className="block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded file:border-0 file:bg-slate-950 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                  disabled={isRunning}
+                  disabled={formControlsDisabled}
                   id="invoice-file"
                   onChange={(event) => {
-                    setSelectedFile(event.target.files?.[0] ?? null);
+                    const nextFile = event.target.files?.[0] ?? null;
+
+                    if (nextFile) {
+                      const sizeError = imageUploadSizeError(nextFile);
+
+                      if (sizeError) {
+                        event.currentTarget.value = "";
+                        setSelectedFile(null);
+                        setErrorMessage(sizeError);
+                        return;
+                      }
+                    }
+
+                    setSelectedFile(nextFile);
                     setErrorMessage(null);
                   }}
                   type="file"
                 />
+                <p className="text-xs font-medium text-slate-500">
+                  Images up to {maxImageUploadSizeLabel}. PDFs up to 10 MB.
+                </p>
 
                 <button
                   className="min-h-10 w-full rounded border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100"
-                  disabled={isRunning}
+                  disabled={formControlsDisabled}
                   onClick={useDemoInvoice}
                   type="button"
                 >
@@ -527,7 +570,7 @@ export function ClinTrialWorkspace() {
                   <select
                     aria-label="Review mode"
                     className="min-h-11 rounded border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                    disabled={isRunning}
+                    disabled={formControlsDisabled}
                     onChange={(event) => setMode(event.target.value as AgentReviewMode)}
                     value={mode}
                   >
@@ -536,7 +579,7 @@ export function ClinTrialWorkspace() {
                   </select>
                   <button
                     className="min-h-11 rounded bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                    disabled={!selectedFile || isRunning}
+                    disabled={!canStartReview}
                     onClick={startReview}
                     type="button"
                   >
@@ -676,7 +719,7 @@ export function ClinTrialWorkspace() {
                   })
                 ) : (
                   <EmptyPanel
-                    text="Upload an invoice to receive fixture extraction results."
+                    text="Upload an invoice to receive agent-extracted service lines."
                     title="No extracted lines"
                   />
                 )}
