@@ -11,6 +11,16 @@ const config: Config = {
       colors: {
         ink: "#171a1f",
         "risk-blue": "#2458d3",
+        slate: {
+          150: "#e9edf3",
+        },
+      },
+      fontFamily: {
+        sans: ["Space Grotesk", "sans-serif"],
+        mono: ["IBM Plex Mono", "monospace"],
+      },
+      spacing: {
+        4.5: "1.125rem",
       },
     },
   },

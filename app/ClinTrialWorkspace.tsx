@@ -1,1380 +1,928 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState, useMemo } from 'react';
+import { 
+  ShieldCheck, 
+  AlertTriangle, 
+  Lock, 
+  Search, 
+  X, 
+  ChevronDown, 
+  ChevronUp, 
+  CornerDownRight, 
+  Info, 
+  CheckCircle2, 
+  AlertCircle,
+  HelpCircle,
+  FileText,
+  Activity,
+  User,
+  FlaskConical,
+  Eye,
+  SlidersHorizontal,
+  Bookmark,
+  Clock
+} from 'lucide-react';
+import { INITIAL_ITEMS, INITIAL_TRAIL } from './trialData';
+import type { AuditTrailEntry, TrialItem } from './trialTypes';
 
-import type {
-  AgentEvent,
-  AgentReviewMode,
-  AgentReviewResult,
-  AgentTool,
-  AgentTraceEntry,
-  AgentTraceKind,
-  AgentTracePhase,
-  AgentTraceStatus,
-  AgentTraceUpdate,
-  BoundaryRecommendation,
-  EvidenceCard,
-  InvoiceLine,
-  RetrievalPlan,
-} from "@/lib/agent/types";
+export function ClinTrialWorkspace() {
+  // App States
+  const [items, setItems] = useState<TrialItem[]>(INITIAL_ITEMS);
+  const [selectedId, setSelectedId] = useState<string>('LI-0473');
+  const [decision, setDecision] = useState<string>('');
+  const [reason, setReason] = useState<string>('');
+  const [trailExpanded, setTrailExpanded] = useState<boolean>(false);
+  const [trail, setTrail] = useState<AuditTrailEntry[]>(INITIAL_TRAIL);
+  const [showAiNotes, setShowAiNotes] = useState<boolean>(true);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [evidenceExpanded, setEvidenceExpanded] = useState<boolean>(false);
+  const [showGaugeTooltip, setShowGaugeTooltip] = useState<boolean>(false);
 
-type ReviewState = "ready" | "running" | "done" | "failed";
+  // Selection helper to auto-reset evidence accordion state
+  const handleSelectItem = (id: string) => {
+    setSelectedId(id);
+    setEvidenceExpanded(false);
+  };
 
-type TraceLogFilter = "all" | AgentTraceKind;
+  // Categories list derived from items
+  const categories = useMemo(() => {
+    const cats = new Set(INITIAL_ITEMS.map((item) => item.cat));
+    return ['All', ...Array.from(cats)];
+  }, []);
 
-const emptyRetrievalPlans: Record<string, RetrievalPlan> = {};
-const emptyRecommendations: Record<string, BoundaryRecommendation> = {};
-const maxImageUploadSizeBytes = 5 * 1024 * 1024;
-const maxImageUploadSizeLabel = "5 MB";
+  // Filter and search items
+  const filteredItems = useMemo(() => {
+    return items.filter((item) => {
+      const matchesSearch = 
+        item.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.desc.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        item.meta.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      const matchesCategory = selectedCategory === 'All' || item.cat === selectedCategory;
+      
+      return matchesSearch && matchesCategory;
+    });
+  }, [items, searchQuery, selectedCategory]);
 
-const traceStyles: Record<AgentTraceStatus, string> = {
-  queued: "border-slate-200 bg-slate-50 text-slate-700",
-  running: "border-blue-200 bg-blue-50 text-blue-800",
-  done: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  failed: "border-rose-200 bg-rose-50 text-rose-800",
-};
+  // Find currently selected item
+  const selectedItem = useMemo(() => {
+    return items.find((it) => it.id === selectedId) || items[0];
+  }, [items, selectedId]);
 
-const tracePhaseOrder: AgentTracePhase[] = [
-  "upload",
-  "extraction",
-  "planning",
-  "search",
-  "ranking",
-  "evaluation",
-  "summary",
-];
+  // Calculate risk items remaining (any item with band !== 'clear')
+  const riskCount = useMemo(() => {
+    return items.filter((i) => i.band !== 'clear' && i.status !== 'pass').length;
+  }, [items]);
 
-const traceToolLabels: Record<AgentTool, string> = {
-  invoice_vision_extractor: "Invoice vision extractor",
-  retrieval_planner: "Evidence planning model",
-  coverage_grid_search: "Coverage grid lookup",
-  protocol_search: "Protocol document search",
-  cta_budget_search: "CTA / budget search",
-  site_evidence_search: "Site evidence lookup",
-  prior_ledger_search: "Prior payment ledger check",
-  evidence_ranker: "VultronRetriever evidence ranker",
-  boundary_evaluator: "Read-only boundary evaluator",
-  reviewer_summary: "Reviewer summary drafter",
-};
+  // Handle status meta formatting
+  const getStatusMeta = (status: string) => {
+    const m: Record<string, { label: string; color: string; bg: string; dot: string; border: string }> = {
+      pass: { label: 'Cleared', color: '#0f766e', bg: '#f0fdfa', dot: '#0d9488', border: '#99f6e4' },
+      flag: { label: 'At risk', color: '#e11d48', bg: '#fff1f2', dot: '#e11d48', border: '#fecdd3' },
+      block: { label: 'Blocked', color: '#e11d48', bg: '#fff1f2', dot: '#e11d48', border: '#fecdd3' },
+      review: { label: 'Review', color: '#b45309', bg: '#fffbeb', dot: '#d97706', border: '#fde68a' },
+      pending: { label: 'Pending', color: '#475569', bg: '#f1f5f9', dot: '#64748b', border: '#cbd5e1' },
+    };
+    return m[status] || m.pending;
+  };
 
-const traceKindLabels: Record<AgentTraceKind, string> = {
-  agent_decision: "Agent decision",
-  tool_call: "Tool call",
-  document_retrieval: "Document retrieval",
-  evidence_rank: "Evidence rank",
-  safety_rule: "Safety rule",
-};
+  // Handle band metadata styling
+  const getBandMeta = (band: string) => {
+    const m: Record<string, { label: string; bg: string; border: string; accent: string }> = {
+      clear: { label: 'Within auto-clear boundary', bg: '#f0fdfa', border: '#99f6e4', accent: '#0f766e' },
+      review: { label: 'Auditor review required', bg: '#fff1f2', border: '#fecdd3', accent: '#e11d48' },
+      hold: { label: 'Recommend hold — high risk', bg: '#fff1f2', border: '#fecdd3', accent: '#e11d48' },
+    };
+    return m[band] || m.review;
+  };
 
-const traceLogFilters: Array<{ label: string; value: TraceLogFilter }> = [
-  { label: "All", value: "all" },
-  { label: "Agent", value: "agent_decision" },
-  { label: "Tools", value: "tool_call" },
-  { label: "Retrieval", value: "document_retrieval" },
-  { label: "Ranking", value: "evidence_rank" },
-  { label: "Rules", value: "safety_rule" },
-];
+  const getBandRouting = (band: string) => {
+    const m: Record<string, string> = {
+      clear: 'Eligible for auto-clear',
+      review: 'Routed to auditor for decision',
+      hold: 'Routed to auditor — hold recommended',
+    };
+    return m[band] || m.review;
+  };
 
-const reviewStateStyles: Record<ReviewState, string> = {
-  ready: "border-slate-200 bg-slate-50 text-slate-700",
-  running: "border-blue-200 bg-blue-50 text-blue-800",
-  done: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  failed: "border-rose-200 bg-rose-50 text-rose-800",
-};
+  const getRecVerb = (band: string) => {
+    const m: Record<string, string> = {
+      clear: 'Approve',
+      review: 'Review',
+      hold: 'Hold',
+    };
+    return m[band] || 'Review';
+  };
 
-const evidenceStyles: Record<EvidenceCard["status"], string> = {
-  matched: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  partial: "border-blue-200 bg-blue-50 text-blue-800",
-  missing: "border-slate-200 bg-slate-100 text-slate-700",
-  blocked: "border-rose-200 bg-rose-50 text-rose-800",
-};
+  const getVerdictMeta = (v: string) => {
+    const m: Record<string, { label: string; color: string; bg: string; border: string }> = {
+      match: { label: 'Match', color: '#0f766e', bg: '#f0fdfa', border: '#cbd5e1' },
+      warn: { label: 'Caution', color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
+      conflict: { label: 'Conflict', color: '#e11d48', bg: '#fff1f2', border: '#fecdd3' },
+      info: { label: 'Info', color: '#475569', bg: '#f1f5f9', border: '#cbd5e1' },
+    };
+    return m[v] || m.info;
+  };
 
-const evidenceSourceLabels: Record<EvidenceCard["sourceType"], string> = {
-  protocol: "Protocol",
-  cta_budget: "CTA / budget",
-  coverage_grid: "Coverage grid",
-  site_evidence: "Site evidence",
-  prior_ledger: "Prior ledger",
-  invoice_extraction: "Invoice extraction",
-};
+  const getSourceLabel = (s: string) => {
+    const m: Record<string, string> = {
+      protocol: 'PROTOCOL',
+      irb: 'IRB / ETHICS',
+      contract: 'SITE CONTRACT',
+      edc: 'SOURCE DATA · EDC',
+    };
+    return m[s] || s.toUpperCase();
+  };
 
-const evidenceTitles: Record<EvidenceCard["sourceType"], string> = {
-  protocol: "Protocol support",
-  cta_budget: "Budget support",
-  coverage_grid: "Coverage rule",
-  site_evidence: "Site record",
-  prior_ledger: "Duplicate payment check",
-  invoice_extraction: "Invoice extraction",
-};
-
-const evidenceSourceAliases: Record<string, string> = {
-  "Prot_000.pdf": "Protocol PDF",
-  "CTA_Financial_Appendix_Excerpt.pdf": "CTA financial appendix",
-  "coverage_analysis_billing_grid.csv": "Coverage grid",
-  "site_evidence_log.csv": "Site evidence log",
-  "prior_payment_ledger.csv": "Prior payment ledger",
-  "invoice_extraction_fixture.csv": "Invoice extraction fixture",
-};
-
-const boundaryStyles: Record<BoundaryRecommendation["boundary"], string> = {
-  "Auto-handle candidate": "border-emerald-200 bg-emerald-50 text-emerald-800",
-  "AI recommend + finance confirm": "border-blue-200 bg-blue-50 text-blue-800",
-  "Human review required": "border-rose-200 bg-rose-50 text-rose-800",
-  "Policy or contract gap": "border-amber-200 bg-amber-50 text-amber-800",
-};
-
-const demoInvoiceSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
-  <rect width="640" height="360" fill="#ffffff"/>
-  <text x="40" y="72" font-family="Arial, sans-serif" font-size="28" fill="#111827">TrialGuard demo invoice</text>
-  <text x="40" y="124" font-family="Arial, sans-serif" font-size="18" fill="#475569">Fixture-backed upload for manual stream testing.</text>
-  <text x="40" y="180" font-family="Arial, sans-serif" font-size="16" fill="#475569">P-101 Visit 3 site fee</text>
-  <text x="40" y="214" font-family="Arial, sans-serif" font-size="16" fill="#475569">P-104 PK blood draw / sample handling</text>
-  <text x="40" y="248" font-family="Arial, sans-serif" font-size="16" fill="#475569">P-105 Endoscopy w/ biopsy</text>
-</svg>`;
-
-function formatFileSize(sizeBytes: number): string {
-  if (sizeBytes < 1024) {
-    return `${sizeBytes} B`;
-  }
-
-  if (sizeBytes < 1024 * 1024) {
-    return `${(sizeBytes / 1024).toFixed(1)} KB`;
-  }
-
-  return `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function isImageUpload(file: File): boolean {
-  return file.type.startsWith("image/");
-}
-
-function imageUploadSizeError(file: File): string | null {
-  if (isImageUpload(file) && file.size > maxImageUploadSizeBytes) {
-    return `Image uploads must be ${maxImageUploadSizeLabel} or smaller.`;
-  }
-
-  return null;
-}
-
-function traceStatusLabel(status: AgentTraceStatus): string {
-  if (status === "queued") {
-    return "Queued";
-  }
-
-  if (status === "running") {
-    return "Running";
-  }
-
-  if (status === "done") {
-    return "Done";
-  }
-
-  return "Failed";
-}
-
-function traceTime(value: string): string {
-  return value.length >= 19 ? value.slice(11, 19) : value;
-}
-
-function planCount(plans: Record<string, RetrievalPlan>): number {
-  return Object.keys(plans).length;
-}
-
-function firstCode(plan: RetrievalPlan | undefined): string {
-  return plan?.candidateItemCodes[0] ?? "Unplanned";
-}
-
-function compactDisplayText(value: string, maxLength: number): string {
-  const compacted = value.replace(/\s+/g, " ").trim();
-
-  if (compacted.length <= maxLength) {
-    return compacted;
-  }
-
-  return `${compacted.slice(0, maxLength - 1).trimEnd()}...`;
-}
-
-function firstSentence(value: string): string {
-  const compacted = value.replace(/\s+/g, " ").trim();
-  const sentenceEnd = compacted.search(/[.!?](\s|$)/);
-
-  if (sentenceEnd === -1) {
-    return compacted;
-  }
-
-  return compacted.slice(0, sentenceEnd + 1);
-}
-
-function stripEvidenceRelation(value: string): string {
-  return value.replace(/\s*Relation:\s*[^.]+\.?\s*$/i, "").trim();
-}
-
-function evidenceSummary(evidence: EvidenceCard): string {
-  const cleanedFinding = stripEvidenceRelation(evidence.finding);
-  const shouldPreferExcerpt =
-    evidence.sourceType === "protocol" ||
-    evidence.sourceType === "cta_budget" ||
-    cleanedFinding.toLowerCase().startsWith("document chunk matched");
-  const summarySource = shouldPreferExcerpt
-    ? firstSentence(evidence.excerpt)
-    : cleanedFinding;
-
-  return compactDisplayText(summarySource || evidence.finding, 190);
-}
-
-function evidenceSourceAlias(sourceName: string): string {
-  return evidenceSourceAliases[sourceName] ?? sourceName;
-}
-
-function evidenceShortLocator(locator: string): string {
-  const rowMatch = locator.match(/#row=([^&#]+)/);
-
-  if (rowMatch) {
-    return `row ${decodeURIComponent(rowMatch[1])}`;
-  }
-
-  const hashMatch = locator.match(/#([^?&]+)/);
-
-  if (hashMatch) {
-    return decodeURIComponent(hashMatch[1]).replaceAll("-", " ");
-  }
-
-  return compactDisplayText(locator, 80);
-}
-
-function evidenceTitle(evidence: EvidenceCard): string {
-  if (evidence.sourceType === "prior_ledger" && evidence.status === "blocked") {
-    return "Duplicate payment risk";
-  }
-
-  if (evidence.sourceType === "cta_budget" && evidence.status === "partial") {
-    return "Budget needs confirmation";
-  }
-
-  if (evidence.status === "missing") {
-    return `${evidenceTitles[evidence.sourceType]} missing`;
-  }
-
-  return evidenceTitles[evidence.sourceType];
-}
-
-function evidenceStatusSummary(evidenceItems: EvidenceCard[]): string {
-  const matched = evidenceItems.filter((item) => item.status === "matched").length;
-  const partial = evidenceItems.filter((item) => item.status === "partial").length;
-  const missing = evidenceItems.filter((item) => item.status === "missing").length;
-  const blocked = evidenceItems.filter((item) => item.status === "blocked").length;
-  const parts = [
-    matched > 0 ? `${matched} matched` : "",
-    partial > 0 ? `${partial} partial` : "",
-    missing > 0 ? `${missing} missing` : "",
-    blocked > 0 ? `${blocked} blocking` : "",
-  ].filter(Boolean);
-
-  return parts.join(" / ") || "No evidence";
-}
-
-function normalizeErrorPayload(payload: unknown): string {
-  if (
-    payload &&
-    typeof payload === "object" &&
-    "error" in payload &&
-    typeof payload.error === "string"
-  ) {
-    return payload.error;
-  }
-
-  return "Agent review request failed.";
-}
-
-function yieldToBrowser(): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, 0);
-  });
-}
-
-function EvidenceStatusBadge({ status }: { status: EvidenceCard["status"] }) {
-  return (
-    <span
-      className={`rounded border px-2 py-1 text-xs font-semibold ${evidenceStyles[status]}`}
-    >
-      {status}
-    </span>
+  // Decision submit handler
+  const canSubmit = !!decision && (
+    (decision === 'reject' || decision === 'escalate') 
+      ? reason.trim().length > 0 
+      : true
   );
-}
 
-function EvidenceCardView({ evidence }: { evidence: EvidenceCard }) {
-  const sourceLabel = evidenceSourceLabels[evidence.sourceType];
-  const sourceAlias = evidenceSourceAlias(evidence.sourceName);
-  const locatorLabel = evidenceShortLocator(evidence.locator);
+  const handleSubmit = () => {
+    if (!canSubmit) return;
 
-  return (
-    <article className="rounded border border-slate-200 bg-white p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600">
-              {sourceLabel}
-            </span>
-            <span className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-500">
-              {(evidence.confidence * 100).toFixed(0)}%
-            </span>
-          </div>
-          <h3 className="mt-2 text-sm font-semibold text-slate-950">
-            {evidenceTitle(evidence)}
-          </h3>
-        </div>
-        <EvidenceStatusBadge status={evidence.status} />
-      </div>
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
 
-      <p className="mt-2 text-sm leading-6 text-slate-700">
-        {evidenceSummary(evidence)}
-      </p>
+    const map: Record<string, [string, string, string]> = {
+      approve: ['Approved', '#0f766e', '#f0fdfa'],
+      partial: ['Partial approval', '#b45309', '#fffbeb'],
+      reject: ['Rejected', '#e11d48', '#fff1f2'],
+      escalate: ['Escalated', '#475569', '#f1f5f9'],
+    };
 
-      <details className="mt-3 rounded border border-slate-200 bg-slate-50 px-3 py-2">
-        <summary className="cursor-pointer text-xs font-semibold text-slate-600">
-          Citation
-        </summary>
-        <dl className="mt-2 space-y-2 text-xs leading-5 text-slate-600">
-          <div>
-            <dt className="font-semibold text-slate-500">Source</dt>
-            <dd className="break-words">{sourceAlias}</dd>
-          </div>
-          <div>
-            <dt className="font-semibold text-slate-500">Locator</dt>
-            <dd className="break-words">
-              {locatorLabel}
-              <span className="sr-only">: {evidence.locator}</span>
-            </dd>
-          </div>
-          <div>
-            <dt className="font-semibold text-slate-500">Excerpt</dt>
-            <dd className="break-words">
-              {compactDisplayText(evidence.excerpt, 240)}
-            </dd>
-          </div>
-        </dl>
-      </details>
-    </article>
-  );
-}
+    const [actionLabel, actionColor, actionBg] = map[decision];
 
-function BoundaryBadge({
-  boundary,
-}: {
-  boundary: BoundaryRecommendation["boundary"];
-}) {
-  return (
-    <span
-      className={`rounded border px-2 py-1 text-xs font-semibold ${boundaryStyles[boundary]}`}
-    >
-      {boundary}
-    </span>
-  );
-}
+    const defaultReasons: Record<string, string> = {
+      approve: 'Approved — Line item complies fully with protocol specifications.',
+      partial: 'Partial approval — Approved with secondary site verification.',
+    };
+    const finalReason = reason.trim() || defaultReasons[decision] || '';
 
-function TraceBadge({ status }: { status: AgentTraceStatus }) {
-  return (
-    <span
-      className={`rounded border px-2 py-1 text-xs font-semibold ${traceStyles[status]}`}
-    >
-      {traceStatusLabel(status)}
-    </span>
-  );
-}
+    const entry: AuditTrailEntry = {
+      time: `2026-07-04 ${hh}:${mm} UTC`,
+      auditor: 'Dr. E. Vance · Lead Auditor',
+      item: selectedItem.id,
+      action: actionLabel,
+      actionColor,
+      actionBg,
+      justification: finalReason,
+    };
 
-function TraceProgress({
-  progress,
-}: {
-  progress: AgentTraceUpdate["progress"];
-}) {
-  if (!progress || progress.total <= 0) {
-    return null;
-  }
+    // Update items state with new status based on decision
+    setItems((prevItems) => {
+      return prevItems.map((item) => {
+        if (item.id === selectedItem.id) {
+          let updatedStatus = item.status;
+          if (decision === 'approve') updatedStatus = 'pass';
+          else if (decision === 'partial' || decision === 'escalate') updatedStatus = 'review';
+          else if (decision === 'reject') updatedStatus = 'block';
 
-  const percent = Math.min(100, Math.round((progress.done / progress.total) * 100));
+          return { ...item, status: updatedStatus };
+        }
+        return item;
+      });
+    });
 
-  return (
-    <div className="mt-3">
-      <div className="flex items-center justify-between text-xs font-medium text-slate-500">
-        <span>
-          {progress.label ? `${progress.label} ` : ""}
-          {progress.done}/{progress.total}
-        </span>
-        <span>{percent}%</span>
-      </div>
-      <div className="mt-1 h-1.5 overflow-hidden rounded bg-slate-100">
-        <div
-          className="h-full rounded bg-blue-600 transition-[width]"
-          style={{ width: `${percent}%` }}
-        />
-      </div>
-    </div>
-  );
-}
+    // Add entry to audit trail
+    setTrail((prevTrail) => [entry, ...prevTrail]);
 
-function LiveTraceCard({
-  index,
-  update,
-}: {
-  index: number;
-  update: AgentTraceUpdate;
-}) {
-  return (
-    <li className="trace-card-enter grid grid-cols-[28px_1fr] gap-3 rounded border border-slate-200 bg-white p-3">
-      <span className="flex h-7 w-7 items-center justify-center rounded border border-slate-200 bg-slate-50 text-xs font-bold text-slate-600">
-        {index + 1}
-      </span>
-      <div className="min-w-0">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-slate-950">
-              {update.title}
-            </h3>
-            {update.tool ? (
-              <p className="mt-1 text-xs font-semibold text-blue-700">
-                {traceToolLabels[update.tool]}
-              </p>
-            ) : null}
-          </div>
-          <TraceBadge status={update.status} />
-        </div>
-        <p className="mt-2 text-sm leading-5 text-slate-700">{update.headline}</p>
-        {update.detail ? (
-          <p className="mt-1 break-words text-sm leading-5 text-slate-500">
-            {update.detail}
-          </p>
-        ) : null}
-        <TraceProgress progress={update.progress} />
-        {update.highlights && update.highlights.length > 0 ? (
-          <ul className="mt-3 space-y-1.5">
-            {update.highlights.map((highlight) => (
-              <li
-                className="rounded bg-slate-50 px-2 py-1.5 text-xs leading-5 text-slate-600"
-                key={highlight}
-              >
-                {highlight}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-      </div>
-    </li>
-  );
-}
+    // Reset decision fields
+    setDecision('');
+    setReason('');
+  };
 
-function TraceLogEntryCard({
-  entry,
-  index,
-}: {
-  entry: AgentTraceEntry;
-  index: number;
-}) {
-  return (
-    <article
-      className="trace-log-enter rounded border border-slate-200 bg-white p-3"
-      style={{ animationDelay: `${Math.min(index * 18, 160)}ms` }}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600">
-              {traceTime(entry.at)}
-            </span>
-            <span className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-800">
-              {traceKindLabels[entry.kind]}
-            </span>
-          </div>
-          <h3 className="mt-2 text-sm font-semibold text-slate-950">
-            {entry.title}
-          </h3>
-        </div>
-        {entry.status ? <TraceBadge status={entry.status} /> : null}
-      </div>
-      {entry.tool ? (
-        <p className="mt-2 text-xs font-semibold text-blue-700">
-          {traceToolLabels[entry.tool]}
-        </p>
-      ) : null}
-      {entry.detail ? (
-        <p className="mt-2 break-words text-sm leading-5 text-slate-600">
-          {entry.detail}
-        </p>
-      ) : null}
-      <div className="mt-3 flex flex-wrap gap-2 text-xs font-medium text-slate-500">
-        {entry.lineId ? (
-          <span className="rounded bg-slate-50 px-2 py-1">{entry.lineId}</span>
-        ) : null}
-        {entry.sources && entry.sources.length > 0 ? (
-          <span className="rounded bg-slate-50 px-2 py-1">
-            {entry.sources.join(", ")}
-          </span>
-        ) : null}
-        {entry.locator ? (
-          <span className="rounded bg-slate-50 px-2 py-1">{entry.locator}</span>
-        ) : null}
-      </div>
-    </article>
-  );
-}
+  // Navigation Items
+  const selMeta = getStatusMeta(selectedItem.status);
+  const selBand = getBandMeta(selectedItem.band);
 
-function ReviewStateBadge({ state }: { state: ReviewState }) {
-  const labelByState: Record<ReviewState, string> = {
-    ready: "Ready",
-    running: "Running",
-    done: "Done",
-    failed: "Failed",
+  // Split audit trail for rendering
+  const latestTrail = trail[0];
+  const restTrail = trail.slice(1);
+
+  // Dynamic values for decision option buttons
+  const getDecisionOptionStyle = (v: string, label: string) => {
+    const on = decision === v;
+    
+    if (v === 'reject') {
+      return (
+        <button
+          key={v}
+          onClick={() => setDecision(v)}
+          className={`cursor-pointer font-sans text-[12.5px] px-4 py-1.5 rounded transition-all duration-150 active:scale-95 border ${
+            on 
+              ? 'bg-rose-600 text-white border-transparent font-bold shadow-sm ring-2 ring-rose-500 ring-offset-1' 
+              : 'bg-rose-600 text-white border-transparent shadow-sm font-semibold hover:bg-rose-700'
+          }`}
+        >
+          {label}
+        </button>
+      );
+    }
+
+    // Approve, Partial, Escalate
+    return (
+      <button
+        key={v}
+        onClick={() => setDecision(v)}
+        className={`cursor-pointer font-sans text-[12.5px] px-4 py-1.5 rounded transition-all duration-150 active:scale-95 border ${
+          on 
+            ? 'bg-slate-800 text-white border-slate-800 font-bold shadow-sm' 
+            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50 font-medium'
+        }`}
+      >
+        {label}
+      </button>
+    );
   };
 
   return (
-    <span
-      className={`rounded border px-2 py-1 text-xs font-semibold ${reviewStateStyles[state]}`}
-    >
-      {labelByState[state]}
-    </span>
-  );
-}
+    <div className="h-screen flex flex-col overflow-hidden font-sans text-slate-800 bg-slate-50 antialiased">
+      
+      {/* ============ PROJECT HEADER ============ */}
+      <header className="flex-none bg-white border-b border-slate-200">
+        <div className="px-5 py-2.5 flex items-center justify-between gap-5">
+          <div className="flex items-center gap-3">
+            {/* Custom high-contrast ClinTrial Logo */}
+            <div className="w-8 h-8 rounded bg-[#0f766e] flex items-center justify-center border border-teal-900/10">
+              <ShieldCheck className="w-5 h-5 text-white" />
+            </div>
+            <div className="flex items-baseline gap-0.5">
+              <span className="text-[19px] font-bold tracking-tight text-slate-800">Clin</span>
+              <span className="text-[19px] font-bold tracking-tight text-teal-700">Trial</span>
+            </div>
+            <span className="hidden sm:inline-block ml-3 font-mono text-[10px] tracking-widest text-[#64748b] border-l border-slate-200 pl-3 uppercase">
+              Invoice Audit Workspace
+            </span>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <div className={`flex items-center gap-2 font-mono text-[11px] px-3 py-1 border transition-all duration-200 rounded ${
+              riskCount > 0 
+                ? 'text-rose-600 bg-rose-50/50 border-rose-500' 
+                : 'text-teal-700 bg-teal-50/50 border-teal-500/30'
+            }`}>
+              <span className={`w-2 h-2 rounded-full animate-pulse ${riskCount > 0 ? 'bg-rose-500' : 'bg-teal-600'}`}></span>
+              {riskCount > 0 ? `${riskCount} items need decision` : 'All items cleared'}
+            </div>
+            <div className="w-8 h-8 rounded bg-[#0f766e] text-white flex items-center justify-center font-bold text-xs select-none">
+              EV
+            </div>
+          </div>
+        </div>
 
-function QueryList({ title, queries }: { title: string; queries: string[] }) {
-  return (
-    <div className="rounded border border-slate-200 bg-white p-3">
-      <h4 className="text-xs font-semibold uppercase text-slate-500">{title}</h4>
-      {queries.length > 0 ? (
-        <ul className="mt-2 space-y-2">
-          {queries.map((query) => (
-            <li
-              className="rounded bg-slate-50 px-2 py-1.5 text-sm leading-5 text-slate-700"
-              key={query}
-            >
-              {query}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-2 text-sm text-slate-500">No query emitted.</p>
-      )}
-    </div>
-  );
-}
-
-function EmptyPanel({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="rounded border border-dashed border-slate-300 bg-slate-50 p-4">
-      <h3 className="text-sm font-semibold text-slate-950">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-slate-600">{text}</p>
-    </div>
-  );
-}
-
-export function ClinTrialWorkspace() {
-  const [hasHydrated, setHasHydrated] = useState(false);
-  const [mode, setMode] = useState<AgentReviewMode>("strict");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isRunning, setIsRunning] = useState(false);
-  const [runId, setRunId] = useState<string | null>(null);
-  const [liveTraceCards, setLiveTraceCards] =
-    useState<Partial<Record<AgentTracePhase, AgentTraceUpdate>>>({});
-  const [traceLog, setTraceLog] = useState<AgentTraceEntry[]>([]);
-  const [isTraceLogOpen, setIsTraceLogOpen] = useState(false);
-  const [traceLogFilter, setTraceLogFilter] = useState<TraceLogFilter>("all");
-  const [invoiceLines, setInvoiceLines] = useState<InvoiceLine[]>([]);
-  const [retrievalPlans, setRetrievalPlans] =
-    useState<Record<string, RetrievalPlan>>(emptyRetrievalPlans);
-  const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
-  const [evidenceByLineId, setEvidenceByLineId] = useState<
-    Record<string, EvidenceCard[]>
-  >({});
-  const [recommendationsByLineId, setRecommendationsByLineId] =
-    useState<Record<string, BoundaryRecommendation>>(emptyRecommendations);
-  const [summary, setSummary] = useState<string | null>(null);
-  const [result, setResult] = useState<AgentReviewResult | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-
-  const selectedLine =
-    invoiceLines.find((line) => line.id === selectedLineId) ??
-    invoiceLines[0] ??
-    null;
-  const selectedPlan = selectedLine ? retrievalPlans[selectedLine.id] : undefined;
-  const selectedEvidence = selectedLine
-    ? (evidenceByLineId[selectedLine.id] ?? [])
-    : [];
-  const selectedRecommendation = selectedLine
-    ? recommendationsByLineId[selectedLine.id]
-    : undefined;
-  const completedPlanCount = planCount(retrievalPlans);
-  const liveTraceItems = tracePhaseOrder.flatMap((phase) => {
-    const update = liveTraceCards[phase];
-
-    return update ? [update] : [];
-  });
-  const visibleTraceLog =
-    traceLogFilter === "all"
-      ? traceLog
-      : traceLog.filter((entry) => entry.kind === traceLogFilter);
-  const reviewState: ReviewState = errorMessage
-    ? "failed"
-    : isRunning
-      ? "running"
-      : result
-        ? "done"
-        : "ready";
-  const formControlsDisabled = !hasHydrated || isRunning;
-  const canStartReview = hasHydrated && selectedFile !== null && !isRunning;
-
-  useEffect(() => {
-    setHasHydrated(true);
-  }, []);
-
-  function resetRunState(): void {
-    setRunId(null);
-    setLiveTraceCards({});
-    setTraceLog([]);
-    setIsTraceLogOpen(false);
-    setTraceLogFilter("all");
-    setInvoiceLines([]);
-    setRetrievalPlans(emptyRetrievalPlans);
-    setSelectedLineId(null);
-    setEvidenceByLineId({});
-    setRecommendationsByLineId(emptyRecommendations);
-    setSummary(null);
-    setResult(null);
-    setErrorMessage(null);
-  }
-
-  function setLocalTraceCard(
-    update: Omit<AgentTraceUpdate, "type" | "updatedAt">,
-  ): void {
-    setLiveTraceCards((items) => ({
-      ...items,
-      [update.id]: {
-        type: "trace_update",
-        ...update,
-        updatedAt: new Date().toISOString(),
-      },
-    }));
-  }
-
-  function handleAgentEvent(event: AgentEvent): void {
-    if (event.type === "started") {
-      setRunId(event.runId);
-      return;
-    }
-
-    if (event.type === "trace_update") {
-      setLiveTraceCards((items) => ({
-        ...items,
-        [event.id]: event,
-      }));
-      return;
-    }
-
-    if (event.type === "step") {
-      return;
-    }
-
-    if (event.type === "extraction") {
-      setInvoiceLines(event.lines);
-      setSelectedLineId((currentLineId) => currentLineId ?? event.lines[0]?.id ?? null);
-      return;
-    }
-
-    if (event.type === "retrieval_plan") {
-      setRetrievalPlans((plans) => ({
-        ...plans,
-        [event.lineId]: event.plan,
-      }));
-      return;
-    }
-
-    if (event.type === "search") {
-      return;
-    }
-
-    if (event.type === "evidence") {
-      setEvidenceByLineId((items) => ({
-        ...items,
-        [event.lineId]: event.evidence,
-      }));
-      return;
-    }
-
-    if (event.type === "decision") {
-      setRecommendationsByLineId((items) => ({
-        ...items,
-        [event.lineId]: event.recommendation,
-      }));
-      return;
-    }
-
-    if (event.type === "summary") {
-      setSummary(event.text);
-      return;
-    }
-
-    if (event.type === "error") {
-      setErrorMessage(event.message);
-      return;
-    }
-
-    setResult(event.result);
-    setRetrievalPlans(event.result.retrievalPlans ?? emptyRetrievalPlans);
-    setEvidenceByLineId(event.result.evidenceByLineId ?? {});
-    setRecommendationsByLineId(
-      event.result.recommendationsByLineId ?? emptyRecommendations,
-    );
-    setTraceLog(event.result.traceLog ?? []);
-  }
-
-  async function readAgentStream(response: Response): Promise<void> {
-    if (!response.body) {
-      throw new Error("Agent review stream was empty.");
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      buffer += decoder.decode(value, { stream: !done });
-      const lines = buffer.split("\n");
-
-      buffer = lines.pop() ?? "";
-
-      for (const line of lines) {
-        const trimmedLine = line.trim();
-
-        if (trimmedLine.length === 0) {
-          continue;
-        }
-
-        handleAgentEvent(JSON.parse(trimmedLine) as AgentEvent);
-        await yieldToBrowser();
-      }
-
-      if (done) {
-        break;
-      }
-    }
-
-    const finalLine = buffer.trim();
-
-    if (finalLine.length > 0) {
-      handleAgentEvent(JSON.parse(finalLine) as AgentEvent);
-      await yieldToBrowser();
-    }
-  }
-
-  async function startReview(): Promise<void> {
-    if (!selectedFile) {
-      setErrorMessage("Choose an invoice file before starting review.");
-      return;
-    }
-
-    const sizeError = imageUploadSizeError(selectedFile);
-
-    if (sizeError) {
-      setErrorMessage(sizeError);
-      return;
-    }
-
-    abortControllerRef.current?.abort();
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-    resetRunState();
-    setIsRunning(true);
-
-    const formData = new FormData();
-    formData.append("invoice", selectedFile);
-    formData.append("mode", mode);
-
-    try {
-      const response = await fetch("/api/agent-review", {
-        method: "POST",
-        body: formData,
-        signal: abortController.signal,
-      });
-
-      if (!response.ok) {
-        let payload: unknown = null;
-
-        try {
-          payload = await response.json();
-        } catch {
-          payload = null;
-        }
-
-        throw new Error(normalizeErrorPayload(payload));
-      }
-
-      await readAgentStream(response);
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        setLocalTraceCard({
-          id: "upload",
-          status: "failed",
-          title: "Review canceled",
-          headline: "The browser canceled the running review request.",
-        });
-        return;
-      }
-
-      const message =
-        error instanceof Error ? error.message : "Agent review request failed.";
-      setErrorMessage(message);
-      setLocalTraceCard({
-        id: "upload",
-        status: "failed",
-        title: "Request failed",
-        headline: "The review request failed before the backend stream completed.",
-        detail: message,
-      });
-    } finally {
-      if (abortControllerRef.current === abortController) {
-        abortControllerRef.current = null;
-      }
-
-      setIsRunning(false);
-    }
-  }
-
-  function cancelReview(): void {
-    abortControllerRef.current?.abort();
-  }
-
-  function useDemoInvoice(): void {
-    setSelectedFile(
-      new File([demoInvoiceSvg], "mock_site_invoice_scan.svg", {
-        type: "image/svg+xml",
-      }),
-    );
-    setMode("demo");
-    setErrorMessage(null);
-  }
-
-  return (
-    <main className="min-h-dvh bg-[#f4f6f8] text-slate-950">
-      <div className="mx-auto flex min-h-dvh w-full max-w-[1440px] flex-col px-4 py-5 sm:px-6 lg:px-8">
-        <header className="mb-5 flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm font-semibold uppercase text-slate-500">
-              TrialGuard
-            </p>
-            <h1 className="mt-2 text-3xl font-bold leading-tight text-slate-950 sm:text-4xl">
-              Invoice evidence agent
-            </h1>
+        {/* Protocol Metadata Subheader */}
+        <div className="px-5 py-1.5 border-t border-slate-200 flex items-center gap-2.5 flex-wrap bg-slate-50 text-xs">
+          <span className="font-mono font-semibold text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded text-[11px]">
+            PRO-2024-0837
+          </span>
+          <span className="font-semibold text-slate-700 bg-slate-200/60 px-2 py-0.5 rounded text-[11px]">
+            Phase III
+          </span>
+          <span className="text-slate-500 font-medium">Northlake Therapeutics</span>
+          <span className="text-slate-300 select-none">·</span>
+          <span className="text-slate-500 font-medium">Resistant Hypertension</span>
+          <span className="text-slate-300 select-none">·</span>
+          
+          <div className="flex items-center gap-1.5 font-medium text-slate-700 bg-white border border-slate-200 rounded px-2.5 py-0.5 cursor-pointer hover:bg-slate-50 transition-all text-[11px]">
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-600"></span>
+            All sites · 12
+            <ChevronDown className="w-3 h-3 text-slate-400 stroke-[2.5]" />
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-center sm:min-w-[420px]">
-            <div className="rounded border border-slate-200 bg-white px-3 py-2">
-              <div className="text-xl font-bold tabular-nums text-slate-950">
-                {invoiceLines.length}
-              </div>
-              <div className="text-xs font-medium text-slate-500">Lines</div>
+          <div className="ml-auto hidden md:flex items-center gap-1.5 font-mono text-[10px] tracking-wider text-slate-600 bg-slate-200/60 px-2.5 py-1 rounded">
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-700"></span>
+            GCP · 21 CFR PART 11
+          </div>
+        </div>
+      </header>
+
+      {/* ============ CORE WORKSPACE BODY ============ */}
+      <main className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[260px_1.5fr_1fr] divide-x divide-slate-200">
+        
+        {/* LEFT COLUMN: Line Items Navigator */}
+        <section className="flex flex-col min-h-0 bg-slate-50/50">
+          {/* Header & Stats */}
+          <div className="flex-none p-3 border-b border-slate-200 bg-white">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-mono text-[10px] tracking-wider uppercase text-slate-500 font-semibold">
+                Line items
+              </span>
+              <span className="font-mono text-[10px] text-slate-400 font-semibold">
+                {items.filter(i => i.status === 'pass').length} / {items.length} Cleared
+              </span>
             </div>
-            <div className="rounded border border-slate-200 bg-white px-3 py-2">
-              <div className="text-xl font-bold tabular-nums text-blue-700">
-                {completedPlanCount}
-              </div>
-              <div className="text-xs font-medium text-slate-500">Plans</div>
+
+            {/* Quick search input */}
+            <div className="relative mb-2">
+              <span className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                <Search className="h-3.5 w-3.5 text-slate-400" />
+              </span>
+              <input
+                type="text"
+                placeholder="Search code, desc..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-7 py-1 bg-white border border-slate-200 rounded text-[11px] placeholder-slate-400 text-slate-800 focus:outline-none focus:border-emerald-800 focus:ring-1 focus:ring-emerald-800 transition-all"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute inset-y-0 right-0 pr-2 flex items-center"
+                >
+                  <X className="h-3 w-3 text-slate-400 hover:text-slate-800" />
+                </button>
+              )}
             </div>
-            <div className="rounded border border-slate-200 bg-white px-3 py-2">
-              <div
-                className={`text-xl font-bold tabular-nums ${
-                  reviewState === "failed"
-                    ? "text-rose-700"
-                    : reviewState === "running"
-                      ? "text-blue-700"
-                      : reviewState === "done"
-                        ? "text-emerald-700"
-                        : "text-slate-700"
+
+            {/* Category pills */}
+            <div className="flex gap-1 overflow-x-auto pb-1 mt-1 scrollbar-none">
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`text-[8.5px] font-mono whitespace-nowrap px-2 py-0.5 rounded cursor-pointer transition-all border ${
+                    selectedCategory === cat
+                      ? 'bg-[#0f766e] text-white border-[#0f766e]'
+                      : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {cat.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* List Wrapper */}
+          <div className="flex-1 overflow-y-auto min-h-0">
+            {filteredItems.length === 0 ? (
+              <div className="p-8 text-center text-xs text-slate-400 font-medium">
+                No matching line items found.
+              </div>
+            ) : (
+              filteredItems.map((item) => {
+                const meta = getStatusMeta(item.status);
+                const isSelected = item.id === selectedId;
+
+                if (!isSelected) {
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => handleSelectItem(item.id)}
+                      className="group cursor-pointer border-b border-slate-100 transition-all duration-150 flex items-center justify-between gap-2 hover:bg-slate-100"
+                      style={{
+                        padding: '8px 14px',
+                        borderLeft: '4px solid transparent',
+                      }}
+                      id={`sidebar-item-compact-${item.id}`}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: meta.dot }}></span>
+                        <span className="font-mono tracking-tight text-[10px] font-bold text-slate-500 group-hover:text-teal-700 truncate">
+                          {item.id}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <span className="font-mono tracking-tight text-[10.5px] font-bold text-slate-700">
+                          {item.amount}
+                        </span>
+                        <span
+                          className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-sm select-none"
+                          style={{ color: meta.color, backgroundColor: meta.bg }}
+                        >
+                          {meta.label}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => handleSelectItem(item.id)}
+                    className="group cursor-pointer p-3 border-b border-slate-100 transition-all duration-150 flex flex-col gap-1 bg-white"
+                    style={{
+                      borderLeft: '4px solid #0f766e',
+                    }}
+                    id={`sidebar-item-active-${item.id}`}
+                  >
+                    <div className="flex justify-between items-center gap-1.5">
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: meta.dot }}></span>
+                        <span className="font-mono tracking-tight text-[11px] font-bold text-[#0f766e]">
+                          {item.id}
+                        </span>
+                      </span>
+                      <span className="font-mono tracking-tight text-[12px] font-bold text-slate-800">
+                        {item.amount}
+                      </span>
+                    </div>
+                    
+                    <div className="text-[12px] font-bold text-slate-800 leading-snug">
+                      {item.desc}
+                    </div>
+
+                    <div className="flex justify-between items-center mt-0.5">
+                      <span className="font-mono text-[8.5px] text-slate-400 font-semibold uppercase tracking-wider">
+                        {item.cat}
+                      </span>
+                      <span
+                        className="text-[9px] font-bold px-2 py-0.5 rounded-sm select-none border"
+                        style={{ 
+                          color: meta.color, 
+                          backgroundColor: meta.bg, 
+                          borderColor: meta.border || 'transparent' 
+                        }}
+                      >
+                        {meta.label}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </section>
+
+        {/* MIDDLE COLUMN: Protocol Evidence Core & Auditor Form */}
+        <section className="flex flex-col min-h-0 bg-slate-50/30">
+          {/* Header Area */}
+          <div className="flex-none p-4 pb-3.5 border-b border-slate-200 bg-white">
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <span className="text-base font-bold tracking-tight text-slate-800">Protocol evidence</span>
+              <span className="font-mono tracking-tight text-xs font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded">
+                {selectedItem.id}
+              </span>
+              <span
+                className="text-[10px] font-bold px-2.5 py-0.5 rounded-sm border"
+                style={{ 
+                  color: selMeta.color, 
+                  backgroundColor: selMeta.bg, 
+                  borderColor: selMeta.border || 'transparent' 
+                }}
+              >
+                {selMeta.label}
+              </span>
+
+              {/* Toggle to turn on/off AI Notes dynamically */}
+              <button
+                onClick={() => setShowAiNotes(!showAiNotes)}
+                className={`ml-auto flex items-center gap-1.5 text-[10.5px] font-bold px-2.5 py-1 rounded transition-all border ${
+                  showAiNotes
+                    ? 'bg-[#3b427a] text-white border-[#3b427a]'
+                    : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
                 }`}
               >
-                {reviewState === "running"
-                  ? "Run"
-                  : reviewState === "done"
-                    ? "Done"
-                    : reviewState === "failed"
-                      ? "Fail"
-                      : "Ready"}
-              </div>
-              <div className="text-xs font-medium text-slate-500">State</div>
+                <Eye className="w-3.5 h-3.5" />
+                {showAiNotes ? 'AI Notes Active' : 'Show AI Notes'}
+              </button>
+            </div>
+            
+            <div className="text-[13px] text-slate-700 mt-1.5 font-semibold">
+              {selectedItem.desc}{' '}
+              <span className="text-slate-400 font-normal">
+                · <span className="font-mono tracking-tight">{selectedItem.amount}</span> · {selectedItem.meta}
+              </span>
             </div>
           </div>
-        </header>
 
-        <section
-          aria-label="TrialGuard review workspace"
-          className="grid flex-1 gap-4 lg:grid-cols-[minmax(300px,0.85fr)_minmax(380px,1.2fr)_minmax(320px,0.95fr)]"
-        >
-          <section className="min-h-[520px] rounded-lg border border-slate-200 bg-white">
-            <div className="border-b border-slate-200 p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold text-slate-950">
-                    Upload
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500">
-                    /api/agent-review
-                  </p>
-                </div>
-                <ReviewStateBadge state={reviewState} />
+          {/* Scrollable Evidence Area */}
+          <div className="flex-1 overflow-y-auto min-h-0 p-5">
+            
+            {/* AI SYNTHESIS HERO CARD */}
+            <div 
+              className={`border border-l-4 p-4 mb-5 transition-all duration-200 rounded shadow-sm ${
+                selectedItem.complianceScore < 85
+                  ? 'bg-rose-50/40 border-rose-200 border-l-rose-600'
+                  : 'bg-teal-50/40 border-teal-200 border-l-teal-600'
+              }`}
+            >
+              <div className="flex items-center gap-2.5 mb-2.5">
+                <span 
+                  className={`font-mono text-[9.5px] font-bold tracking-widest text-white px-2 py-0.5 rounded-sm ${
+                    selectedItem.complianceScore < 85 ? 'bg-rose-600' : 'bg-teal-700'
+                  }`}
+                >
+                  AI SYNTHESIS
+                </span>
+                <span className={`text-xs font-bold ${
+                  selectedItem.complianceScore < 85 ? 'text-rose-600' : 'text-teal-700'
+                }`}>
+                  {selBand.label}
+                </span>
+                <span className="ml-auto font-mono text-[10px] text-slate-400 font-semibold">
+                  4 sources analyzed
+                </span>
               </div>
-
-              <div className="mt-4 space-y-3">
-                <label
-                  className="block text-sm font-semibold text-slate-700"
-                  htmlFor="invoice-file"
-                >
-                  Invoice file
-                </label>
-                <input
-                  accept="image/svg+xml,image/png,image/jpeg,image/webp,application/pdf"
-                  className="block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 file:mr-3 file:rounded file:border-0 file:bg-slate-950 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                  disabled={formControlsDisabled}
-                  id="invoice-file"
-                  onChange={(event) => {
-                    const nextFile = event.target.files?.[0] ?? null;
-
-                    if (nextFile) {
-                      const sizeError = imageUploadSizeError(nextFile);
-
-                      if (sizeError) {
-                        event.currentTarget.value = "";
-                        setSelectedFile(null);
-                        setErrorMessage(sizeError);
-                        return;
-                      }
-                    }
-
-                    setSelectedFile(nextFile);
-                    if (nextFile) {
-                      setMode("strict");
-                    }
-                    setErrorMessage(null);
-                  }}
-                  type="file"
-                />
-                <p className="text-xs font-medium text-slate-500">
-                  Images up to {maxImageUploadSizeLabel}. PDFs up to 10 MB.
-                </p>
-
-                <button
-                  className="min-h-10 w-full rounded border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100"
-                  disabled={formControlsDisabled}
-                  onClick={useDemoInvoice}
-                  type="button"
-                >
-                  Use demo invoice
-                </button>
-
-                <div className="grid grid-cols-[1fr_auto] gap-3">
-                  <select
-                    aria-label="Review mode"
-                    className="min-h-11 rounded border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                    disabled={formControlsDisabled}
-                    onChange={(event) => setMode(event.target.value as AgentReviewMode)}
-                    value={mode}
-                  >
-                    <option value="strict">strict</option>
-                    <option value="demo">demo</option>
-                  </select>
-                  <button
-                    className="min-h-11 rounded bg-slate-950 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                    disabled={!canStartReview}
-                    onClick={startReview}
-                    type="button"
-                  >
-                    Start review
-                  </button>
-                </div>
-
-                {isRunning ? (
-                  <button
-                    className="min-h-10 w-full rounded border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:border-slate-500"
-                    onClick={cancelReview}
-                    type="button"
-                  >
-                    Cancel
-                  </button>
-                ) : null}
-
-                {selectedFile ? (
-                  <div className="rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-                    <div className="font-semibold text-slate-900">
-                      {selectedFile.name}
-                    </div>
-                    <div className="mt-1">
-                      {selectedFile.type || "unknown"} |{" "}
-                      {formatFileSize(selectedFile.size)}
-                    </div>
-                  </div>
-                ) : null}
-
-                {errorMessage ? (
-                  <div className="rounded border border-rose-200 bg-rose-50 p-3 text-sm font-medium text-rose-800">
-                    {errorMessage}
-                  </div>
-                ) : null}
+              <div className="text-[13.5px] text-slate-800 leading-relaxed font-medium">
+                {selectedItem.summary}
               </div>
             </div>
 
-            <div className="p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-base font-semibold text-slate-950">
-                  Live agent trace
-                </h2>
-                <div className="flex min-w-0 items-center gap-2">
-                  {traceLog.length > 0 ? (
-                    <button
-                      className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-semibold text-slate-700 transition hover:border-slate-500"
-                      onClick={() => setIsTraceLogOpen((isOpen) => !isOpen)}
-                      type="button"
-                    >
-                      {isTraceLogOpen ? "Hide run log" : "View run log"}
-                    </button>
-                  ) : null}
-                  {runId ? (
-                    <span className="max-w-[120px] truncate rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-medium text-slate-600">
-                      {runId}
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-
-              {liveTraceItems.length > 0 ? (
-                <ol className="space-y-2">
-                  {liveTraceItems.map((item, index) => (
-                    <LiveTraceCard
-                      index={index}
-                      key={`${item.id}-${item.updatedAt}`}
-                      update={item}
-                    />
-                  ))}
-                </ol>
-              ) : (
-                <EmptyPanel
-                  text="No backend trace event has arrived in this browser session."
-                  title="Waiting for stream"
-                />
-              )}
-
-              {isTraceLogOpen && traceLog.length > 0 ? (
-                <div className="mt-4 border-t border-slate-200 pt-4">
-                  <div className="mb-3 flex flex-wrap gap-2">
-                    {traceLogFilters.map((filter) => {
-                      const isActive = traceLogFilter === filter.value;
-
-                      return (
-                        <button
-                          className={`rounded border px-2 py-1 text-xs font-semibold transition ${
-                            isActive
-                              ? "border-slate-950 bg-slate-950 text-white"
-                              : "border-slate-300 bg-white text-slate-700 hover:border-slate-500"
-                          }`}
-                          key={filter.value}
-                          onClick={() => setTraceLogFilter(filter.value)}
-                          type="button"
-                        >
-                          {filter.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {visibleTraceLog.length > 0 ? (
-                    <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-                      {visibleTraceLog.map((entry, index) => (
-                        <TraceLogEntryCard
-                          entry={entry}
-                          index={index}
-                          key={entry.id}
-                        />
-                      ))}
+            {/* EVIDENCE - CROSS-REFERENCE MAPPING Accordion */}
+            {(() => {
+              const conflictCount = selectedItem.evidence.filter(ev => ev.verdict === 'conflict').length;
+              const warnCount = selectedItem.evidence.filter(ev => ev.verdict === 'warn').length;
+              return (
+                <div className="mb-6">
+                  <button
+                    onClick={() => setEvidenceExpanded(!evidenceExpanded)}
+                    className="w-full flex items-center justify-between p-3.5 bg-white border border-slate-200 hover:bg-slate-50 rounded transition-all cursor-pointer shadow-sm group"
+                    id="evidence-accordion-trigger"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex h-2 w-2 relative">
+                        {conflictCount > 0 && (
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                        )}
+                        <span className={`relative inline-flex rounded-full h-2 w-2 ${conflictCount > 0 ? 'bg-rose-500' : 'bg-amber-500'}`}></span>
+                      </span>
+                      <span className="font-sans text-[13.5px] font-bold text-slate-800 group-hover:text-teal-700 transition-colors">
+                        View Evidence Sources ({conflictCount} {conflictCount === 1 ? 'Conflict' : 'Conflicts'}{warnCount > 0 ? `, ${warnCount} Warning${warnCount === 1 ? '' : 's'}` : ''})
+                      </span>
                     </div>
-                  ) : (
-                    <EmptyPanel
-                      text="No entries match the selected filter."
-                      title="No entries"
-                    />
+                    <div className="flex items-center gap-1.5 text-xs font-mono text-slate-400 font-semibold group-hover:text-teal-700 transition-colors">
+                      <span>{evidenceExpanded ? 'Collapse' : 'Expand'}</span>
+                      <ChevronDown className={`w-4 h-4 transition-transform duration-200 stroke-[2.5] ${evidenceExpanded ? 'rotate-180 text-teal-700' : 'text-slate-400'}`} />
+                    </div>
+                  </button>
+
+                  {evidenceExpanded && (
+                    <div className="mt-4 flex flex-col gap-3" id="evidence-accordion-content">
+                      {selectedItem.evidence.map((ev, idx) => {
+                        const verdict = getVerdictMeta(ev.verdict);
+                        return (
+                          <div
+                            key={idx}
+                            className="bg-white border rounded p-4 transition-all hover:shadow-sm"
+                            style={{ borderColor: verdict.border }}
+                          >
+                            <div className="flex items-center justify-between gap-3 mb-2">
+                              <span className="font-mono text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded tracking-wider">
+                                {getSourceLabel(ev.src)}
+                              </span>
+                              <span
+                                className="text-[10px] font-bold px-2 py-0.5 rounded-sm"
+                                style={{ color: verdict.color, backgroundColor: verdict.bg }}
+                              >
+                                {verdict.label}
+                              </span>
+                            </div>
+
+                            <div className="font-mono text-[11px] text-teal-700 font-semibold mb-1.5">
+                              {ev.ref}
+                            </div>
+
+                            <div className="text-[13px] text-slate-700 leading-relaxed">
+                              {ev.text}
+                            </div>
+
+                            {/* AI Notes - with showAiNotes toggle state */}
+                            {showAiNotes && (
+                              (() => {
+                                const aiStyle = ev.verdict === 'conflict'
+                                  ? { bg: '#fff1f2', border: '#f43f5e', badgeBg: '#e11d48', text: '#e11d48' }
+                                  : ev.verdict === 'warn'
+                                  ? { bg: '#fffbeb', border: '#fde68a', badgeBg: '#d97706', text: '#b45309' }
+                                  : ev.verdict === 'match'
+                                  ? { bg: '#f0fdfa', border: '#99f6e4', badgeBg: '#0f766e', text: '#0f766e' }
+                                  : { bg: '#f8fafc', border: '#cbd5e1', badgeBg: '#475569', text: '#334155' };
+                                return (
+                                  <div 
+                                    className="mt-3.5 flex gap-2.5 items-start border-l-2 rounded-r p-2.5 transition-all"
+                                    style={{ backgroundColor: aiStyle.bg, borderLeftColor: aiStyle.border }}
+                                  >
+                                    <span 
+                                      className="font-mono text-[9px] font-bold text-white px-1.5 py-0.5 rounded-sm mt-0.5 select-none"
+                                      style={{ backgroundColor: aiStyle.badgeBg }}
+                                    >
+                                      AI
+                                    </span>
+                                    <span className="text-[12px] leading-relaxed" style={{ color: aiStyle.text }}>
+                                      {ev.ai}
+                                    </span>
+                                  </div>
+                                );
+                              })()
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
-              ) : null}
+              );
+            })()}
+          </div>
+
+          {/* STICKY BOTTOM AUDITOR DECISION BAR */}
+          <div className="flex-none bg-slate-100/50 border-t border-slate-200/80 p-4 transition-all duration-300">
+            <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-sm bg-teal-700"></span>
+                <span className="font-mono text-[11px] font-bold tracking-wider text-teal-700">
+                  AUDITOR DECISION
+                </span>
+                <span className="text-xs text-slate-500 hidden sm:inline">
+                  AI recommends <strong style={{ color: selBand.accent }}>{getRecVerb(selectedItem.band)}</strong> — human sign-off required
+                </span>
+              </div>
+              
+              <span className="font-mono text-[10.5px] font-semibold text-slate-600 bg-slate-200/50 px-2 py-0.5 rounded">
+                <span className="font-mono tracking-tight">{selectedItem.id}</span> · <span className="font-mono tracking-tight">{selectedItem.amount}</span>
+              </span>
             </div>
-          </section>
 
-          <section className="min-h-[520px] rounded-lg border border-slate-200 bg-white">
-            <div className="border-b border-slate-200 p-4">
-              <p className="text-sm font-semibold uppercase text-slate-500">
-                Extracted lines
-              </p>
-              <h2 className="mt-2 text-xl font-bold text-slate-950">
-                {selectedLine ? `Line ${selectedLine.lineNumber}` : "No line selected"}
-              </h2>
-            </div>
+            <div className="flex flex-col gap-3">
+              {/* Row 1: Decision options and inline Quick Sign if applicable */}
+              <div className="flex flex-wrap items-center justify-between gap-3 bg-white/60 p-2 rounded-lg border border-slate-200/50">
+                <div className="flex gap-1.5 flex-wrap">
+                  {getDecisionOptionStyle('approve', 'Approve')}
+                  {getDecisionOptionStyle('partial', 'Partial')}
+                  {getDecisionOptionStyle('escalate', 'Escalate')}
+                  {getDecisionOptionStyle('reject', 'Reject')}
+                </div>
 
-            <div className="grid gap-4 p-4 xl:grid-cols-[minmax(220px,0.8fr)_minmax(260px,1fr)]">
-              <div className="space-y-2">
-                {invoiceLines.length > 0 ? (
-                  invoiceLines.map((line) => {
-                    const isSelected = line.id === selectedLine?.id;
-                    const linePlan = retrievalPlans[line.id];
-
-                    return (
-                      <button
-                        aria-pressed={isSelected}
-                        className={`w-full rounded border p-3 text-left transition hover:border-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                          isSelected
-                            ? "border-blue-500 bg-blue-50"
-                            : "border-slate-200 bg-white"
-                        }`}
-                        key={line.id}
-                        onClick={() => setSelectedLineId(line.id)}
-                        type="button"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold text-slate-950">
-                              {line.patientId} | {line.visitName}
-                            </div>
-                            <div className="mt-1 truncate text-sm text-slate-600">
-                              {line.rawDescription}
-                            </div>
-                          </div>
-                          <div className="text-right text-sm font-semibold tabular-nums text-slate-950">
-                            EUR {line.amount}
-                          </div>
-                        </div>
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                          <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600">
-                            {(line.extractionConfidence * 100).toFixed(0)}%
-                          </span>
-                          <span className="rounded border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-800">
-                            {firstCode(linePlan)}
-                          </span>
-                        </div>
-                      </button>
-                    );
-                  })
-                ) : (
-                  <EmptyPanel
-                    text="Upload an invoice to receive agent-extracted service lines."
-                    title="No extracted lines"
-                  />
+                {/* Quick sign action for Approve or Partial (since justification is optional) */}
+                {(decision === 'approve' || decision === 'partial') && (
+                  <button
+                    onClick={handleSubmit}
+                    className="cursor-pointer font-sans text-[12px] font-bold px-4 py-1.5 rounded bg-teal-700 text-white hover:bg-teal-800 transition-all duration-150 active:scale-95 shadow-sm"
+                  >
+                    Quick Sign &amp; Log
+                  </button>
                 )}
               </div>
 
-              <div>
-                {selectedLine ? (
-                  <div className="space-y-4">
-                    <div className="rounded border border-slate-200 bg-white p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h3 className="text-base font-semibold text-slate-950">
-                            {selectedLine.rawDescription}
-                          </h3>
-                          <p className="mt-2 text-sm text-slate-600">
-                            {selectedLine.patientId} | {selectedLine.visitName}
-                          </p>
-                        </div>
-                        <div className="text-right text-base font-bold tabular-nums text-slate-950">
-                          EUR {selectedLine.amount}
-                        </div>
-                      </div>
-                    </div>
-
-                    {selectedPlan ? (
-                      <div className="space-y-3">
-                        <div className="rounded border border-blue-200 bg-blue-50 p-3">
-                          <h3 className="text-sm font-semibold text-blue-950">
-                            Candidate item codes
-                          </h3>
-                          <div className="mt-2 flex flex-wrap gap-2">
-                            {selectedPlan.candidateItemCodes.map((code) => (
-                              <span
-                                className="rounded border border-blue-300 bg-white px-2 py-1 text-xs font-semibold text-blue-800"
-                                key={code}
-                              >
-                                {code}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-
-                        <QueryList
-                          queries={selectedPlan.protocolQueries}
-                          title="Protocol"
-                        />
-                        <QueryList
-                          queries={selectedPlan.budgetQueries}
-                          title="CTA / budget"
-                        />
-                        <QueryList
-                          queries={selectedPlan.coverageQueries}
-                          title="Coverage grid"
-                        />
-                        <QueryList
-                          queries={selectedPlan.siteEvidenceQueries}
-                          title="Site evidence"
-                        />
-                        <QueryList
-                          queries={selectedPlan.ledgerQueries}
-                          title="Prior ledger"
-                        />
-                      </div>
-                    ) : (
-                      <EmptyPanel
-                        text="Retrieval plan events will appear here as the stream advances."
-                        title="Planning"
-                      />
-                    )}
+              {/* Collapsible area for Mandatory Justification (Reject / Escalate) */}
+              <div 
+                className={`transition-all duration-300 ease-in-out overflow-hidden ${
+                  (decision === 'reject' || decision === 'escalate') 
+                    ? 'max-h-56 opacity-100 mt-1' 
+                    : 'max-h-0 opacity-0 pointer-events-none'
+                }`}
+              >
+                <div className="flex gap-4 flex-col lg:flex-row items-stretch pt-2 border-t border-slate-200/50">
+                  <div className="flex-1 flex flex-col gap-2">
+                    <textarea
+                      value={reason}
+                      onChange={(e) => setReason(e.target.value)}
+                      placeholder={
+                        decision === 'reject' 
+                          ? "Mandatory justification — state the evidence-based rationale for Rejecting this line item…" 
+                           : "Mandatory justification — explain the reasons for Escalating this to review board…"
+                      }
+                      className="w-full h-14 resize-none font-sans text-[12px] text-slate-800 leading-relaxed p-2 border border-slate-200 rounded outline-none bg-white focus:border-teal-700 focus:ring-1 focus:ring-teal-700 transition-all placeholder-slate-400"
+                    ></textarea>
                   </div>
-                ) : (
-                  <EmptyPanel
-                    text="Extracted invoice lines will populate this panel."
-                    title="Line detail"
-                  />
-                )}
+
+                  <div className="flex-none flex flex-row lg:flex-col justify-between items-end gap-2.5">
+                    <div className="text-right text-[11px] text-slate-400 leading-tight hidden lg:block">
+                      <span className="text-slate-600 font-bold">Dr. E. Vance</span>
+                      <br />
+                      <span className="font-mono text-[9.5px]">AUD-0231 · signed</span>
+                    </div>
+                    <button
+                      disabled={!canSubmit}
+                      onClick={handleSubmit}
+                      className="cursor-pointer font-sans text-[12.5px] font-bold px-4 py-2 rounded whitespace-nowrap transition-all duration-150 active:scale-95 border border-transparent shadow-sm"
+                      style={{
+                        backgroundColor: canSubmit ? (decision === 'reject' ? '#dc2626' : '#1e293b') : '#cbd5e1',
+                        color: canSubmit ? '#FFFFFF' : '#64748b',
+                      }}
+                    >
+                      Sign &amp; Log {decision === 'reject' ? 'Rejection' : 'Escalation'}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
-          </section>
-
-          <section className="min-h-[520px] rounded-lg border border-slate-200 bg-white">
-            <div className="border-b border-slate-200 p-4">
-              <p className="text-sm font-semibold uppercase text-slate-500">
-                Evidence and boundary
-              </p>
-              <h2 className="mt-2 text-xl font-bold text-slate-950">
-                {selectedLine ? `Line ${selectedLine.lineNumber} evidence` : "Evidence packet"}
-              </h2>
-            </div>
-
-            <div className="space-y-4 p-4">
-              {selectedEvidence.length > 0 ? (
-                <div className="space-y-2">
-                  <div className="rounded border border-slate-200 bg-slate-50 p-3">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="text-sm font-semibold text-slate-950">
-                        Evidence packet
-                      </h3>
-                      <span className="rounded border border-slate-200 bg-white px-2 py-1 text-xs font-semibold text-slate-600">
-                        {selectedEvidence.length} cards
-                      </span>
-                    </div>
-                    <p className="mt-2 text-sm leading-5 text-slate-600">
-                      {evidenceStatusSummary(selectedEvidence)}
-                    </p>
-                  </div>
-                  {selectedEvidence.map((evidence) => (
-                    <EvidenceCardView evidence={evidence} key={evidence.id} />
-                  ))}
-                </div>
-              ) : (
-                <EmptyPanel
-                  text="Evidence cards will appear here after local search and ranker events complete for the selected line."
-                  title="Evidence pending"
-                />
-              )}
-
-              {selectedRecommendation ? (
-                <article className="rounded border border-slate-200 bg-white p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-sm font-semibold text-slate-950">
-                        Automation boundary
-                      </h3>
-                      <p className="mt-1 text-xs font-medium text-slate-500">
-                        Deterministic read-only recommendation
-                      </p>
-                    </div>
-                    <BoundaryBadge boundary={selectedRecommendation.boundary} />
-                  </div>
-                  <p className="mt-3 text-sm leading-6 text-slate-700">
-                    {selectedRecommendation.decisionReason}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <span className="rounded border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-600">
-                      Score {(selectedRecommendation.score * 100).toFixed(0)}%
-                    </span>
-                    {selectedRecommendation.riskFlags.length > 0 ? (
-                      selectedRecommendation.riskFlags.map((flag) => (
-                        <span
-                          className="rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-800"
-                          key={flag}
-                        >
-                          {flag}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs font-semibold text-emerald-800">
-                        no blocking risk flags
-                      </span>
-                    )}
-                  </div>
-                  <ol className="mt-3 space-y-2 text-sm leading-5 text-slate-600">
-                    {selectedRecommendation.auditTrail.slice(0, 4).map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ol>
-                </article>
-              ) : (
-                <EmptyPanel
-                  text="The deterministic boundary will appear after evidence ranking completes for the selected line."
-                  title="Boundary evaluator pending"
-                />
-              )}
-
-              {summary ? (
-                <div className="rounded border border-slate-200 bg-slate-50 p-4">
-                  <h3 className="text-sm font-semibold text-slate-950">
-                    Reviewer summary
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-700">{summary}</p>
-                </div>
-              ) : null}
-
-              {result ? (
-                <div className="rounded border border-emerald-200 bg-emerald-50 p-4">
-                  <h3 className="text-sm font-semibold text-emerald-950">
-                    Completed
-                  </h3>
-                  <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                    <div>
-                      <dt className="text-emerald-700">Uploaded</dt>
-                      <dd className="mt-1 font-semibold text-emerald-950">
-                        {result.uploadedInvoice.fileName}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-emerald-700">Mode</dt>
-                      <dd className="mt-1 font-semibold text-emerald-950">
-                        {result.mode}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-emerald-700">Lines</dt>
-                      <dd className="mt-1 font-semibold text-emerald-950">
-                        {result.extractedLines.length}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-emerald-700">Plans</dt>
-                      <dd className="mt-1 font-semibold text-emerald-950">
-                        {planCount(result.retrievalPlans ?? emptyRetrievalPlans)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-emerald-700">Decisions</dt>
-                      <dd className="mt-1 font-semibold text-emerald-950">
-                        {result.recommendations.length}
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
-              ) : null}
-            </div>
-          </section>
+          </div>
         </section>
-      </div>
-    </main>
+
+        {/* RIGHT COLUMN: Compliance Engine & Audit Trail */}
+        <section className="flex flex-col min-h-0 bg-white">
+          <div className="flex-none p-4 border-b border-slate-200">
+            <span className="text-base font-bold tracking-tight text-slate-800">Compliance boundary engine</span>
+            <div className="text-xs text-slate-400 mt-0.5">AI assessment mapped to GCP rules</div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto min-h-0 p-5 bg-slate-50/20">
+            {/* HERO SCORE & CONFIDENCE BLOCK */}
+            <div 
+              className={`border p-4.5 transition-all duration-200 rounded shadow-sm ${
+                selectedItem.complianceScore < 85
+                  ? 'bg-rose-50/40 border-rose-200'
+                  : 'bg-teal-50/40 border-teal-200'
+              }`}
+            >
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className={`font-mono text-[10px] tracking-wider uppercase font-semibold ${
+                    selectedItem.complianceScore < 85 ? 'text-rose-600' : 'text-teal-700'
+                  }`}>
+                    Compliance score
+                  </div>
+                  <div 
+                    className={`text-[60px] font-semibold tracking-tighter leading-none mt-1.5 font-mono tabular-nums ${
+                      selectedItem.complianceScore < 85 ? 'text-rose-600' : 'text-teal-700'
+                    }`}
+                  >
+                    {selectedItem.complianceScore}%
+                  </div>
+                  <div className={`text-[12.5px] font-bold mt-1.5 ${
+                    selectedItem.complianceScore < 85 ? 'text-rose-600' : 'text-teal-700'
+                  }`}>
+                    {selBand.label}
+                  </div>
+                </div>
+                
+                <div className={`text-right border-l pl-4 ${
+                  selectedItem.complianceScore < 85 ? 'border-rose-200' : 'border-teal-200'
+                }`}>
+                  <div className="font-mono text-[10px] tracking-wider uppercase text-slate-500 font-semibold">
+                    AI confidence
+                  </div>
+                  <div className="text-[32px] font-semibold tracking-tighter text-slate-700 leading-tight mt-1.5 font-mono tabular-nums">
+                    {selectedItem.aiConfidence}%
+                  </div>
+                  <div className="text-[10.5px] text-slate-400 mt-0.5 font-medium">model certainty</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Threshold Gauge Block */}
+            <div className="mt-4 border border-slate-200 rounded p-4 relative bg-white shadow-sm">
+              <div className="flex items-center gap-1.5 mb-4 select-none">
+                <span className="font-mono text-[9.5px] tracking-wider uppercase text-slate-500 font-semibold">
+                  Boundary threshold gauge
+                </span>
+                <div 
+                  className="relative flex items-center"
+                  onMouseEnter={() => setShowGaugeTooltip(true)}
+                  onMouseLeave={() => setShowGaugeTooltip(false)}
+                >
+                  <button 
+                    onClick={() => setShowGaugeTooltip(!showGaugeTooltip)}
+                    className="p-0.5 rounded hover:bg-slate-100 transition-all text-slate-400 hover:text-slate-800 cursor-pointer"
+                    id="gauge-info-button"
+                  >
+                    <Info className="w-3.5 h-3.5 stroke-[2.5]" />
+                  </button>
+                  {showGaugeTooltip && (
+                    <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 w-64 bg-slate-900 text-white text-[11.5px] leading-relaxed rounded p-3 shadow-lg z-50 pointer-events-auto border border-slate-800">
+                      <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-[6px] border-transparent border-t-slate-900"></div>
+                      The compliance engine never auto-rejects. Line items with safety or protocol deviations scoring below the <strong className="text-teal-400">auto-clear boundary (85%)</strong> are routed to human auditors.
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              {/* Dynamic pointer position */}
+              <div className="relative h-7">
+                <div 
+                  className="absolute top-0 transform -translate-x-1/2 flex flex-col items-center transition-all duration-300"
+                  style={{ left: `${selectedItem.complianceScore}%` }}
+                >
+                  <span 
+                    className="font-mono tracking-tight text-[10px] font-bold text-white px-1.5 py-0.5 rounded shadow-sm animate-pulse"
+                    style={{ backgroundColor: selBand.accent }}
+                  >
+                    {selectedItem.complianceScore}%
+                  </span>
+                  <span className="w-0.5 h-1.5" style={{ backgroundColor: selBand.accent }}></span>
+                </div>
+              </div>
+
+              {/* Gauge Bar */}
+              <div className="relative mt-0.5">
+                <div className="flex h-1.5 rounded overflow-hidden">
+                  <div className="w-[40%] bg-rose-500" title="Hold zone (0-40%)"></div>
+                  <div className="w-[45%] bg-amber-500" title="Auditor review zone (40-85%)"></div>
+                  <div className="w-[15%] bg-teal-600" title="Auto-clear zone (85-100%)"></div>
+                </div>
+                {/* 85% Auto-clear threshold line */}
+                <div className="absolute left-[85%] top-[-4px] bottom-[-4px] border-l-2 border-dashed border-slate-900/60" title="Auto-clear threshold at 85%"></div>
+                {/* Precise black vertical indicator cutting through the gauge bar */}
+                <div 
+                  className="absolute top-[-3px] bottom-[-3px] w-0.5 bg-black z-10 shadow-sm transition-all duration-300" 
+                  style={{ left: `${selectedItem.complianceScore}%` }}
+                >
+                  <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-full w-0 h-0 border-[3.5px] border-transparent border-t-black"></div>
+                </div>
+              </div>
+
+              {/* Gauge labels */}
+              <div className="flex justify-between mt-2.5 font-mono text-[9px] tracking-wider text-slate-400 font-bold uppercase select-none">
+                <span className="text-rose-600">Hold</span>
+                <span className="text-amber-600">Auditor review</span>
+                <span className="text-teal-700">Auto-clear (85%)</span>
+              </div>
+            </div>
+
+            {/* GCP Rules mapped */}
+            <div className="mt-4">
+              <div className="font-mono text-[9.5px] tracking-wider uppercase text-slate-500 font-semibold mb-2">
+                GCP rule mapping
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {selectedItem.gcpRules.map((rule) => (
+                  <span 
+                    key={rule}
+                    className="font-mono text-[10.5px] text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded"
+                  >
+                    {rule}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Bottom recommendation card */}
+            <div 
+              className="mt-4 border-l-4 p-3.5 transition-all duration-200 rounded shadow-sm"
+              style={{
+                backgroundColor: selBand.bg,
+                borderColor: selBand.border,
+                borderLeftColor: selBand.accent
+              }}
+            >
+              <div className="flex items-center mb-2">
+                <span className="font-mono text-[9.5px] font-bold tracking-widest text-white bg-[#3b427a] px-2 py-0.5 rounded-sm select-none">
+                  AI RECOMMENDATION
+                </span>
+              </div>
+              <div className="text-[13px] text-slate-800 leading-relaxed font-medium">
+                {selectedItem.rec}
+              </div>
+              <div className="mt-2 flex items-center gap-1.5 text-[11.5px] font-bold" style={{ color: selBand.accent }}>
+                <span className="text-[13px]">&rarr;</span> {getBandRouting(selectedItem.band)}
+              </div>
+            </div>
+
+          </div>
+
+          {/* BOTTOM IMMUTABLE AUDIT TRAIL */}
+          <div className="flex-none bg-slate-50/50 border-t border-slate-200/60">
+            {/* Minimalist toggle header integrating into bottom background */}
+            <div 
+              onClick={() => setTrailExpanded(!trailExpanded)}
+              className="cursor-pointer px-5 py-3 flex items-center justify-between select-none hover:bg-slate-100/60 transition-all text-slate-500 hover:text-slate-800"
+            >
+              <div className="flex items-center gap-2">
+                <Clock className="w-3.5 h-3.5 text-slate-400 stroke-[2.5]" />
+                <span className="font-mono text-[10px] font-bold tracking-wider uppercase text-slate-600">
+                  AUDIT TRAIL
+                </span>
+                <span className="font-mono text-[8.5px] bg-slate-200/60 text-slate-600 px-1.5 py-0.5 rounded font-semibold select-none flex items-center gap-1">
+                  <Lock className="w-2 h-2 text-slate-500" /> IMMUTABLE · {trail.length}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-[10px] font-semibold text-slate-400">
+                  {trailExpanded ? 'Hide history' : 'View history'}
+                </span>
+                <div className="transition-transform duration-200" style={{ transform: trailExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 stroke-[2.5]" />
+                </div>
+              </div>
+            </div>
+
+            {/* Collapsible scrollable list of all Audit records */}
+            {trailExpanded && (
+              <div className="max-h-52 overflow-y-auto border-t border-slate-150 bg-white divide-y divide-slate-100">
+                {trail.map((row, idx) => (
+                  <div key={idx} className="px-5 py-2.5 flex items-start gap-2.5 hover:bg-slate-50/50 transition-colors">
+                    <span 
+                      className="text-[9px] font-bold px-1.5 py-0.5 rounded-sm select-none font-sans"
+                      style={{ color: row.actionColor, backgroundColor: row.actionBg }}
+                    >
+                      {row.action}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex gap-2 items-baseline flex-wrap">
+                        <span className="font-mono tracking-tight text-[10px] font-bold text-emerald-800">{row.item}</span>
+                        <span className="text-[11px] text-slate-700 font-bold">{row.auditor}</span>
+                        <span className="font-mono text-[9px] text-slate-400">{row.time}</span>
+                      </div>
+                      <div className="text-[11px] text-slate-600 leading-relaxed mt-1 font-medium">
+                        {row.justification}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+      </main>
+    </div>
   );
 }
