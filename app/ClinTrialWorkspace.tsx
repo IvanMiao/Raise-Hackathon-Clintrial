@@ -1056,14 +1056,43 @@ export function ClinTrialWorkspace() {
           </span>
           <span className="text-slate-500 font-medium">Northlake Therapeutics</span>
           <span className="text-slate-300 select-none">·</span>
-          <span className="text-slate-500 font-medium">Resistant Hypertension</span>
-          <span className="text-slate-300 select-none">·</span>
           
           <div className="flex items-center gap-1.5 font-medium text-slate-700 bg-white border border-slate-200 rounded px-2.5 py-0.5 cursor-pointer hover:bg-slate-50 transition-all text-[11px]">
             <span className="w-1.5 h-1.5 rounded-full bg-teal-600"></span>
             All sites · 12
             <ChevronDown className="w-3 h-3 text-slate-400 stroke-[2.5]" />
           </div>
+
+          {hasAgentTrace && (
+            <div
+              aria-label="Live agent reasoning steps"
+              className="order-last flex w-full min-w-0 items-center gap-1.5 overflow-x-auto scrollbar-none pt-1 lg:order-none lg:w-auto lg:flex-1 lg:pt-0"
+            >
+              {agentTraceSteps.map((step, index) => {
+                const isRunningStep = step.status === 'running';
+
+                return (
+                  <div
+                    aria-current={isRunningStep ? 'step' : undefined}
+                    className={`inline-flex min-h-6 min-w-[92px] max-w-[128px] items-center justify-between gap-2 rounded border px-2 transition-all duration-200 ${agentTraceStatusStyles[step.status]}`}
+                    key={step.id}
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5 font-mono text-[8.5px] font-bold uppercase tracking-wider">
+                      <span className={`h-1.5 w-1.5 flex-none rounded-full ${agentTraceDotStyles[step.status]}`}></span>
+                      <span className="truncate">
+                        {String(index + 1).padStart(2, '0')} · {step.title}
+                      </span>
+                    </span>
+                    {step.progressLabel && (
+                      <span className="flex-none font-mono text-[8.5px] font-bold tabular-nums">
+                        {step.progressLabel}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="ml-auto flex items-center gap-2">
             <span
@@ -1077,48 +1106,8 @@ export function ClinTrialWorkspace() {
               <span className={`w-1.5 h-1.5 rounded-full ${isAgentRunning ? 'animate-pulse bg-blue-500' : agentStatus === 'failed' ? 'bg-rose-500' : 'bg-teal-700'}`}></span>
               {compactText(agentMessage, 76)}
             </span>
-            <div className="hidden md:flex items-center gap-1.5 font-mono text-[10px] tracking-wider text-slate-600 bg-slate-200/60 px-2.5 py-1 rounded">
-              <span className="w-1.5 h-1.5 rounded-full bg-teal-700"></span>
-              GCP · 21 CFR PART 11
-            </div>
           </div>
         </div>
-
-        {hasAgentTrace && (
-          <div
-            aria-label="Live agent reasoning steps"
-            className="border-t border-slate-200 bg-white px-5 py-2"
-          >
-            <div className="flex gap-2 overflow-x-auto scrollbar-none">
-              {agentTraceSteps.map((step, index) => {
-                const isRunningStep = step.status === 'running';
-
-                return (
-                  <div
-                    aria-current={isRunningStep ? 'step' : undefined}
-                    className={`min-w-[150px] flex-1 rounded border px-2.5 py-2 transition-all duration-200 ${agentTraceStatusStyles[step.status]}`}
-                    key={step.id}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="flex items-center gap-1.5 font-mono text-[9px] font-bold uppercase tracking-wider">
-                        <span className={`h-1.5 w-1.5 rounded-full ${agentTraceDotStyles[step.status]}`}></span>
-                        {String(index + 1).padStart(2, '0')} · {step.title}
-                      </span>
-                      {step.progressLabel && (
-                        <span className="font-mono text-[9px] font-bold tabular-nums">
-                          {step.progressLabel}
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-1 truncate text-[10.5px] font-semibold">
-                      {compactText(step.headline, 68)}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
       </header>
 
       {/* ============ CORE WORKSPACE BODY ============ */}
