@@ -34,8 +34,8 @@ export function DnaHelix() {
     const ro = new ResizeObserver(resize);
     ro.observe(parent);
 
-    // Multi-strand palette (4 strands = fuller, layered helix)
-    const strandColors = ["#2D4F3F", "#1a1a1a"];
+    // Multi-strand palette — light, airy greens
+    const strandColors = ["#86efac", "#4ade80"];
     const STRANDS = strandColors.length;
     const rungColor = "#d5d0ca";
 
