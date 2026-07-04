@@ -71,8 +71,8 @@ function Landing() {
                 while waiting
               </span>
               <span
-                className="block animate-fade-up font-normal"
-                style={{ animationDelay: "500ms", color: "var(--ghost-deep)" }}
+                className="block animate-fade-up font-normal text-foreground"
+                style={{ animationDelay: "500ms" }}
               >
                 to get paid.
               </span>
