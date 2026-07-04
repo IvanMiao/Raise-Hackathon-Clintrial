@@ -1,0 +1,6 @@
+{
+  "name": "ClinTrial Invoice Audit Workspace",
+  "description": "An interactive clinical trial invoice audit workspace with automated protocol evidence cross-referencing and compliance mapping.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
