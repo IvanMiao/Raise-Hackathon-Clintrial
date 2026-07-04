@@ -107,12 +107,68 @@ function Landing() {
             </div>
           </div>
 
-          {/* RIGHT — DNA Helix */}
+          {/* RIGHT — DNA Helix with drifting aurora light-shades */}
           <div
-            className="animate-fade-up relative min-h-0 w-full"
+            className="animate-fade-up relative min-h-0 w-full overflow-hidden"
             style={{ animationDelay: "860ms" }}
           >
-            <DnaHelix />
+            {/* Helix sits underneath */}
+            <div className="absolute inset-0">
+              <DnaHelix />
+            </div>
+
+            {/* Aurora gradient shades — soft, drifting, clinical */}
+            <div className="pointer-events-none absolute inset-0" aria-hidden>
+              <div
+                className="aurora-layer"
+                style={{
+                  background:
+                    "radial-gradient(closest-side, rgba(45,79,63,0.55), rgba(45,79,63,0) 70%)",
+                  animation: "aurora-a 14s ease-in-out infinite",
+                }}
+              />
+              <div
+                className="aurora-layer"
+                style={{
+                  background:
+                    "radial-gradient(closest-side, rgba(255,244,214,0.7), rgba(255,244,214,0) 70%)",
+                  animation: "aurora-b 18s ease-in-out infinite",
+                  animationDelay: "-4s",
+                }}
+              />
+              <div
+                className="aurora-layer"
+                style={{
+                  background:
+                    "radial-gradient(closest-side, rgba(184,204,196,0.55), rgba(184,204,196,0) 70%)",
+                  animation: "aurora-c 22s ease-in-out infinite",
+                  animationDelay: "-9s",
+                }}
+              />
+
+              {/* Slow vertical light sheen sweep */}
+              <div
+                className="absolute -inset-x-10 top-0 h-[140%]"
+                style={{
+                  background:
+                    "linear-gradient(180deg, transparent 0%, rgba(255,255,255,0.55) 45%, rgba(255,255,255,0.9) 50%, rgba(255,255,255,0.55) 55%, transparent 100%)",
+                  mixBlendMode: "overlay",
+                  filter: "blur(24px)",
+                  animation: "sheen-sweep 9s cubic-bezier(0.65,0,0.35,1) infinite",
+                  animationDelay: "2s",
+                }}
+                aria-hidden
+              />
+
+              {/* Subtle inner vignette to keep it editorial */}
+              <div
+                className="absolute inset-0"
+                style={{
+                  background:
+                    "radial-gradient(120% 90% at 50% 50%, transparent 55%, rgba(249,247,244,0.55) 100%)",
+                }}
+              />
+            </div>
           </div>
         </section>
       </div>
