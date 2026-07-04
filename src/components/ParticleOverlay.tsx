@@ -50,7 +50,7 @@ export function ParticleOverlay() {
     };
 
     const particles: Particle[] = [];
-    const count = 55;
+    const count = 180;
 
     for (let i = 0; i < count; i++) {
       particles.push({
