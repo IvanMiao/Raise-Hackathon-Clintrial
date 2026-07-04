@@ -1,116 +1,173 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MoleculeCanvas } from "@/components/MoleculeCanvas";
-import { ArrowRight } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   component: Landing,
 });
 
+function GreenDot() {
+  return (
+    <span
+      className="inline-block h-1.5 w-1.5 rounded-full align-middle"
+      style={{ backgroundColor: "var(--green-dot)" }}
+    />
+  );
+}
+
 function Landing() {
   return (
     <main className="relative min-h-screen w-full overflow-hidden bg-background text-foreground">
-      {/* background grid + radial glows */}
-      <div className="absolute inset-0 bg-grid opacity-60" />
+      {/* Ghost canvas layer */}
+      <div className="pointer-events-none absolute inset-0 opacity-70">
+        <MoleculeCanvas />
+      </div>
+
+      {/* Ghost watermark text */}
       <div
-        className="pointer-events-none absolute -top-40 -left-40 h-[520px] w-[520px] rounded-full blur-3xl"
-        style={{ background: "radial-gradient(circle, oklch(0.78 0.15 180 / 0.18), transparent 60%)" }}
-      />
-      <div
-        className="pointer-events-none absolute -bottom-40 right-0 h-[520px] w-[520px] rounded-full blur-3xl"
-        style={{ background: "radial-gradient(circle, oklch(0.65 0.14 240 / 0.15), transparent 60%)" }}
-      />
+        className="pointer-events-none absolute inset-0 flex items-center justify-end overflow-hidden animate-ghost-in"
+        aria-hidden
+      >
+        <span
+          className="font-display italic leading-none select-none whitespace-nowrap -mr-16 md:-mr-24 lg:-mr-32"
+          style={{
+            color: "var(--ghost)",
+            fontSize: "clamp(180px, 28vw, 340px)",
+            fontWeight: 500,
+            transform: "translateY(2%)",
+          }}
+        >
+          ClinTrail
+        </span>
+      </div>
 
-      <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1400px] flex-col lg:flex-row">
-        {/* LEFT */}
-        <section className="flex w-full flex-col justify-center gap-7 px-6 py-14 sm:px-10 lg:w-[55%] lg:px-16 lg:py-20">
-          <div className="animate-fade-up" style={{ animationDelay: "0ms" }}>
-            <span className="inline-flex items-center gap-2 rounded-full border border-teal/25 bg-teal/5 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.14em] text-teal">
-              <span className="h-1.5 w-1.5 rounded-full bg-teal shadow-[0_0_10px_var(--teal)]" />
-              RAISE 2026 · Vultr Track · Healthcare
-            </span>
+      {/* Content */}
+      <div className="relative z-10 flex min-h-screen flex-col">
+        {/* NAV */}
+        <nav className="flex items-center justify-between px-6 py-6 sm:px-10 lg:px-14 lg:py-8">
+          <div className="animate-fade-up text-[15px]" style={{ animationDelay: "0ms" }}>
+            <span className="font-semibold text-foreground">ClinTrial</span>
+            <span className="text-muted-foreground"> /.</span>
           </div>
-
-          <div className="animate-fade-up" style={{ animationDelay: "80ms" }}>
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-muted-foreground">
-              ClinTrial Intelligence
-            </p>
-          </div>
-
-          <h1
-            className="animate-fade-up text-balance text-4xl font-bold leading-[1.05] tracking-tight text-foreground text-glow-teal sm:text-5xl lg:text-[56px]"
-            style={{ animationDelay: "160ms" }}
-          >
-            Clinical trials should not{" "}
-            <span className="italic font-light">run from PDFs.</span>
-          </h1>
-
-          <p
-            className="animate-fade-up max-w-xl text-lg font-medium leading-snug text-teal sm:text-xl lg:text-2xl"
-            style={{ animationDelay: "260ms" }}
-          >
-            ClinTrail turns trial protocols into a live operations agent for hospital research teams.
-          </p>
-
-          <p
-            className="animate-fade-up max-w-xl text-base leading-relaxed text-muted-foreground"
-            style={{ animationDelay: "340ms" }}
-          >
-            It closes the gap between complex protocol documents and real-world site execution — helping
-            teams catch missing actions, review risks, and create cited compliance evidence before
-            deviations happen.
-          </p>
-
-          {/* stats */}
           <div
-            className="animate-fade-up grid max-w-xl grid-cols-1 gap-4 border-y border-border/60 py-6 sm:grid-cols-2"
-            style={{ animationDelay: "420ms" }}
+            className="animate-fade-up flex items-center gap-8"
+            style={{ animationDelay: "80ms" }}
           >
-            <div>
-              <div className="font-mono text-2xl font-semibold tracking-tight text-foreground">
-                80% <span className="text-muted-foreground text-lg">of sites</span>
-              </div>
-              <div className="mt-1 text-sm text-muted-foreground">
-                have &lt; 6 months operating cash
-              </div>
-            </div>
-            <div>
-              <div className="font-mono text-2xl font-semibold tracking-tight text-foreground">
-                90–180 <span className="text-muted-foreground text-lg">days</span>
-              </div>
-              <div className="mt-1 text-sm text-muted-foreground">
-                average payment delay to trial sites
-              </div>
-            </div>
-          </div>
-
-          <div className="animate-fade-up flex flex-col gap-4" style={{ animationDelay: "500ms" }}>
+            <ul className="hidden items-center gap-8 text-[11px] font-medium uppercase tracking-[0.2em] text-muted-foreground md:flex">
+              <li><a href="#" className="transition-colors hover:text-foreground">About</a></li>
+              <li><a href="#" className="transition-colors hover:text-foreground">Product</a></li>
+              <li><a href="#" className="transition-colors hover:text-foreground">Research</a></li>
+            </ul>
             <a
               href="#"
-              className="group inline-flex w-fit items-center gap-2 rounded-lg bg-teal px-6 py-3.5 text-sm font-semibold text-primary-foreground transition-all hover:brightness-110 hover:-translate-y-0.5"
-              style={{
-                boxShadow:
-                  "0 10px 30px -8px oklch(0.78 0.15 180 / 0.55), 0 0 0 1px oklch(0.85 0.17 180 / 0.4) inset",
-              }}
+              className="inline-flex items-center gap-1.5 rounded-full bg-primary px-4 py-2 text-[11px] font-medium uppercase tracking-[0.2em] text-primary-foreground transition-transform hover:-translate-y-px"
             >
-              Try ClinTrail
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+              Contact <span aria-hidden>↗</span>
             </a>
-            <p className="text-xs text-muted-foreground">
-              Built at RAISE 2026, Paris · Powered by Vultr Serverless Inference
+          </div>
+        </nav>
+
+        {/* HERO */}
+        <section className="flex flex-1 flex-col gap-14 px-6 pb-32 pt-8 sm:px-10 lg:flex-row lg:gap-10 lg:px-14 lg:pb-28 lg:pt-12">
+          {/* LEFT */}
+          <div className="flex flex-col justify-center gap-8 lg:w-[58%]">
+            <div
+              className="animate-fade-up flex items-center gap-2 label-eyebrow"
+              style={{ animationDelay: "180ms" }}
+            >
+              <GreenDot /> RAISE 2026 // Healthcare
+            </div>
+
+            <h1
+              className="font-display leading-[1.02] tracking-[-0.02em]"
+              style={{ fontSize: "clamp(48px, 7.2vw, 84px)" }}
+            >
+              <span
+                className="block animate-fade-up font-normal text-foreground"
+                style={{ animationDelay: "260ms" }}
+              >
+                Clinical trials
+              </span>
+              <span
+                className="block animate-fade-up italic font-normal"
+                style={{ animationDelay: "380ms", color: "var(--forest)" }}
+              >
+                should not
+              </span>
+              <span
+                className="block animate-fade-up font-normal text-foreground"
+                style={{ animationDelay: "500ms" }}
+              >
+                run from PDFs.
+              </span>
+            </h1>
+          </div>
+
+          {/* RIGHT */}
+          <div className="flex flex-col justify-center gap-8 lg:w-[42%] lg:pt-24">
+            <p
+              className="animate-fade-up max-w-md text-[17px] leading-[1.7] text-muted-foreground lg:ml-auto lg:text-right"
+              style={{ animationDelay: "620ms" }}
+            >
+              Turning complex{" "}
+              <span className="font-semibold text-foreground">protocol documents</span> into live
+              operational workflows — catching{" "}
+              <span className="font-semibold text-foreground">missing actions</span>, surfacing{" "}
+              <span className="font-semibold text-foreground">deviation risks</span>, and creating{" "}
+              <span className="font-semibold text-foreground">cited compliance evidence</span>{" "}
+              before things go wrong.
             </p>
+
+            <div
+              className="animate-fade-up flex flex-col gap-3 lg:items-end"
+              style={{ animationDelay: "740ms" }}
+            >
+              <a
+                href="#"
+                className="inline-flex w-fit items-center gap-2 rounded-full bg-primary px-6 py-3 text-[13px] font-medium text-primary-foreground transition-transform hover:-translate-y-px"
+                style={{ boxShadow: "0 1px 2px rgba(0,0,0,0.08)" }}
+              >
+                Try ClinTrail <span aria-hidden>↗</span>
+              </a>
+              <p className="text-[11px] text-muted-foreground lg:text-right">
+                Built at RAISE 2026, Paris · Powered by Vultr
+              </p>
+            </div>
+
+            {/* scroll indicator */}
+            <div
+              className="animate-fade-up mt-4 hidden items-center gap-3 lg:ml-auto lg:flex"
+              style={{ animationDelay: "860ms" }}
+            >
+              <span className="label-eyebrow">Scroll</span>
+              <span
+                className="flex h-6 w-6 items-center justify-center rounded-full border"
+                style={{ borderColor: "var(--ghost-deep)" }}
+              >
+                <span
+                  className="h-1 w-1 rounded-full"
+                  style={{ backgroundColor: "var(--muted-foreground)" }}
+                />
+              </span>
+            </div>
           </div>
         </section>
 
-        {/* RIGHT */}
-        <section className="relative h-[420px] w-full lg:h-auto lg:w-[45%]">
-          <div className="absolute inset-0">
-            <MoleculeCanvas />
+        {/* BOTTOM BAR */}
+        <div
+          className="animate-fade-up absolute inset-x-0 bottom-0 border-t px-6 py-5 sm:px-10 lg:px-14"
+          style={{ animationDelay: "900ms", borderColor: "var(--border)" }}
+        >
+          <div className="flex flex-col items-start justify-between gap-3 md:flex-row md:items-center">
+            <div className="flex items-center gap-2 label-eyebrow">
+              <GreenDot /> Systems // View
+            </div>
+            <ul className="flex flex-wrap items-center gap-x-6 gap-y-2 label-eyebrow">
+              <li>• Protocol Intelligence</li>
+              <li>• Site Operations</li>
+              <li>• Payment Governance</li>
+            </ul>
           </div>
-          <div
-            className="pointer-events-none absolute inset-0 lg:bg-gradient-to-r lg:from-background lg:via-transparent lg:to-transparent"
-            aria-hidden
-          />
-        </section>
+        </div>
       </div>
     </main>
   );
