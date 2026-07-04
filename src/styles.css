@@ -32,7 +32,7 @@
   --color-cream: var(--cream);
   --color-green-dot: var(--green-dot);
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-serif: "Playfair Display", ui-serif, Georgia, serif;
+  --font-serif: "Cormorant Garamond", ui-serif, Georgia, serif;
 }
 
 :root {

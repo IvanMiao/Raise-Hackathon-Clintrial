@@ -30,8 +30,8 @@ function Landing() {
         <span
           className="font-display italic leading-none select-none whitespace-nowrap -mr-16 md:-mr-24 lg:-mr-32"
           style={{
-            color: "var(--ghost)",
-            fontSize: "clamp(180px, 28vw, 340px)",
+            color: "#f0ede9",
+            fontSize: "clamp(200px, 32vw, 400px)",
             fontWeight: 500,
             transform: "translateY(2%)",
           }}
@@ -44,9 +44,9 @@ function Landing() {
       <div className="relative z-10 flex min-h-screen flex-col">
         {/* NAV */}
         <nav className="flex items-center justify-between px-6 py-6 sm:px-10 lg:px-14 lg:py-8">
-          <div className="animate-fade-up text-[15px]" style={{ animationDelay: "0ms" }}>
-            <span className="font-semibold text-foreground">ClinTrial</span>
-            <span className="text-muted-foreground"> /.</span>
+          <div className="animate-fade-up flex items-baseline gap-1" style={{ animationDelay: "0ms" }}>
+            <span className="font-display text-[18px] font-semibold text-foreground">ClinTrial</span>
+            <span className="text-[16px] text-muted-foreground"> /.</span>
           </div>
           <div
             className="animate-fade-up flex items-center gap-8"
@@ -67,7 +67,7 @@ function Landing() {
         </nav>
 
         {/* HERO */}
-        <section className="flex flex-1 flex-col gap-14 px-6 pb-32 pt-8 sm:px-10 lg:flex-row lg:gap-10 lg:px-14 lg:pb-28 lg:pt-12">
+        <section className="flex flex-1 flex-col gap-14 px-6 pb-32 pt-16 sm:px-10 lg:flex-row lg:gap-10 lg:px-14 lg:pb-28 lg:pt-24">
           {/* LEFT */}
           <div className="flex flex-col justify-center gap-8 lg:w-[58%]">
             <div
@@ -78,8 +78,8 @@ function Landing() {
             </div>
 
             <h1
-              className="font-display leading-[1.02] tracking-[-0.02em]"
-              style={{ fontSize: "clamp(48px, 7.2vw, 84px)" }}
+              className="font-display leading-[0.95] tracking-[-0.03em]"
+              style={{ fontSize: "clamp(56px, 9vw, 100px)" }}
             >
               <span
                 className="block animate-fade-up font-normal text-foreground"
@@ -94,8 +94,8 @@ function Landing() {
                 while waiting
               </span>
               <span
-                className="block animate-fade-up font-normal text-foreground"
-                style={{ animationDelay: "500ms" }}
+                className="block animate-fade-up font-normal"
+                style={{ animationDelay: "500ms", color: "var(--ghost-deep)" }}
               >
                 to get paid.
               </span>
@@ -105,7 +105,7 @@ function Landing() {
           {/* RIGHT */}
           <div className="flex flex-col justify-center gap-8 lg:w-[42%] lg:pt-24">
             <p
-              className="animate-fade-up max-w-md text-[17px] leading-[1.7] text-muted-foreground lg:ml-auto lg:text-right"
+              className="animate-fade-up max-w-lg text-[16px] leading-[1.7] text-muted-foreground lg:ml-auto lg:text-right"
               style={{ animationDelay: "620ms" }}
             >
               Clinical trial sites run the studies that bring new treatments to patients. But they wait{" "}
