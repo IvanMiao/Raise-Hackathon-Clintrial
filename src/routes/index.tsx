@@ -74,7 +74,7 @@ function Landing() {
               className="animate-fade-up flex items-center gap-2 label-eyebrow"
               style={{ animationDelay: "180ms" }}
             >
-              <GreenDot /> RAISE 2026 // Healthcare
+              <GreenDot /> RAISE 2026 // FINANCE · HEALTHCARE
             </div>
 
             <h1
@@ -85,19 +85,19 @@ function Landing() {
                 className="block animate-fade-up font-normal text-foreground"
                 style={{ animationDelay: "260ms" }}
               >
-                Clinical trials
+                Every invoice
               </span>
               <span
                 className="block animate-fade-up italic font-normal"
                 style={{ animationDelay: "380ms", color: "var(--forest)" }}
               >
-                should not
+                deserves proof
               </span>
               <span
                 className="block animate-fade-up font-normal text-foreground"
                 style={{ animationDelay: "500ms" }}
               >
-                run from PDFs.
+                before payment.
               </span>
             </h1>
           </div>
@@ -108,13 +108,13 @@ function Landing() {
               className="animate-fade-up max-w-md text-[17px] leading-[1.7] text-muted-foreground lg:ml-auto lg:text-right"
               style={{ animationDelay: "620ms" }}
             >
-              Turning complex{" "}
-              <span className="font-semibold text-foreground">protocol documents</span> into live
-              operational workflows — catching{" "}
-              <span className="font-semibold text-foreground">missing actions</span>, surfacing{" "}
-              <span className="font-semibold text-foreground">deviation risks</span>, and creating{" "}
-              <span className="font-semibold text-foreground">cited compliance evidence</span>{" "}
-              before things go wrong.
+              Pharma pays clinical trial sites against{" "}
+              <span className="font-semibold text-foreground">protocols</span>,{" "}
+              <span className="font-semibold text-foreground">contracts</span>, and{" "}
+              <span className="font-semibold text-foreground">visit logs</span> — documents nobody cross-checks until the auditor arrives. ClinTrail reads them all, scores the evidence behind every line item, and tells finance what's{" "}
+              <span className="font-semibold text-foreground">safe to pay</span>, what needs a{" "}
+              <span className="font-semibold text-foreground">second look</span>, and where the{" "}
+              <span className="font-semibold text-foreground">rules don't exist yet</span>.
             </p>
 
             <div
@@ -129,7 +129,7 @@ function Landing() {
                 Try ClinTrail <span aria-hidden>↗</span>
               </a>
               <p className="text-[11px] text-muted-foreground lg:text-right">
-                Built at RAISE 2026, Paris · Powered by Vultr
+                Built at RAISE 2026, Paris · Powered by Vultr Serverless Inference
               </p>
             </div>
 
@@ -162,9 +162,9 @@ function Landing() {
               <GreenDot /> Systems // View
             </div>
             <ul className="flex flex-wrap items-center gap-x-6 gap-y-2 label-eyebrow">
-              <li>• Protocol Intelligence</li>
-              <li>• Site Operations</li>
-              <li>• Payment Governance</li>
+              <li>• EVIDENCE SCORING</li>
+              <li>• PAYMENT GOVERNANCE</li>
+              <li>• POLICY GAP DETECTION</li>
             </ul>
           </div>
         </div>
