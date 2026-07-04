@@ -30,6 +30,9 @@ import type {
   AgentEvent,
   AgentReviewMode,
   AgentReviewResult,
+  AgentTracePhase,
+  AgentTraceStatus,
+  AgentTraceUpdate,
   BoundaryRecommendation,
   EvidenceCard,
   EvidenceSource,
@@ -59,6 +62,70 @@ const agentStatusStyles: Record<AgentRunStatus, string> = {
   running: 'text-blue-700 bg-blue-50 border-blue-200',
   done: 'text-teal-700 bg-teal-50 border-teal-200',
   failed: 'text-rose-600 bg-rose-50 border-rose-200',
+};
+
+const agentTracePhaseOrder: AgentTracePhase[] = [
+  'upload',
+  'extraction',
+  'planning',
+  'search',
+  'ranking',
+  'evaluation',
+];
+
+const agentTracePhaseDefaults: Record<
+  AgentTracePhase,
+  { title: string; headline: string }
+> = {
+  upload: {
+    title: 'Upload',
+    headline: 'Waiting for invoice handoff.',
+  },
+  extraction: {
+    title: 'Extract',
+    headline: 'Waiting to read line items.',
+  },
+  planning: {
+    title: 'Plan',
+    headline: 'Waiting to plan evidence searches.',
+  },
+  search: {
+    title: 'Search',
+    headline: 'Waiting for read-only evidence tools.',
+  },
+  ranking: {
+    title: 'Rank',
+    headline: 'Waiting to rank evidence.',
+  },
+  evaluation: {
+    title: 'Evaluate',
+    headline: 'Waiting for boundary checks.',
+  },
+  summary: {
+    title: 'Summary',
+    headline: 'Waiting to draft reviewer summary.',
+  },
+};
+
+const agentTraceStatusStyles: Record<AgentTraceStatus, string> = {
+  queued: 'border-slate-200 bg-white text-slate-500',
+  running: 'agent-step-thinking border-blue-300 bg-blue-50 text-blue-900 shadow-sm',
+  done: 'border-teal-200 bg-teal-50 text-teal-800',
+  failed: 'border-rose-200 bg-rose-50 text-rose-800',
+};
+
+const agentTraceDotStyles: Record<AgentTraceStatus, string> = {
+  queued: 'bg-slate-300',
+  running: 'bg-blue-500 animate-pulse',
+  done: 'bg-teal-600',
+  failed: 'bg-rose-500',
+};
+
+const evidenceVerdictPriority: Record<EvidenceItem['verdict'], number> = {
+  conflict: 0,
+  warn: 1,
+  match: 2,
+  info: 3,
 };
 
 const evidenceSourceToUiSource: Record<EvidenceSource, string> = {
@@ -154,6 +221,46 @@ function evidenceReference(evidence: EvidenceCard): string {
   }
 
   return `${evidence.sourceName} · ${compactText(evidence.locator, 80)}`;
+}
+
+function staggerDelay(index: number): string {
+  return `${Math.min(index * 45, 270)}ms`;
+}
+
+function traceProgressLabel(progress: AgentTraceUpdate['progress']): string | null {
+  if (!progress || progress.total <= 0) {
+    return null;
+  }
+
+  return `${progress.done}/${progress.total}`;
+}
+
+function agentTraceStepView(
+  phase: AgentTracePhase,
+  update: AgentTraceUpdate | undefined,
+) {
+  const fallback = agentTracePhaseDefaults[phase];
+
+  return {
+    id: phase,
+    title: update?.title ?? fallback.title,
+    headline: update?.headline ?? fallback.headline,
+    status: update?.status ?? 'queued',
+    progressLabel: traceProgressLabel(update?.progress),
+  };
+}
+
+function sortEvidenceByPriority(evidence: EvidenceItem[]): EvidenceItem[] {
+  return evidence
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => {
+      const priorityDelta =
+        evidenceVerdictPriority[left.item.verdict] -
+        evidenceVerdictPriority[right.item.verdict];
+
+      return priorityDelta === 0 ? left.index - right.index : priorityDelta;
+    })
+    .map(({ item }) => item);
 }
 
 function mapEvidenceCard(evidence: EvidenceCard): EvidenceItem {
@@ -283,6 +390,8 @@ function auditEntryFromAgentResult(result: AgentReviewResult): AuditTrailEntry {
 export function ClinTrialWorkspace() {
   // App States
   const [items, setItems] = useState<TrialItem[]>(INITIAL_ITEMS);
+  const [visibleItemCount, setVisibleItemCount] = useState<number>(INITIAL_ITEMS.length);
+  const [resultSequenceKey, setResultSequenceKey] = useState<number>(0);
   const [selectedId, setSelectedId] = useState<string>('LI-0473');
   const [decision, setDecision] = useState<string>('');
   const [reason, setReason] = useState<string>('');
@@ -299,12 +408,16 @@ export function ClinTrialWorkspace() {
     'Upload an invoice to run backend review.',
   );
   const [agentError, setAgentError] = useState<string | null>(null);
+  const [liveTraceCards, setLiveTraceCards] =
+    useState<Partial<Record<AgentTracePhase, AgentTraceUpdate>>>({});
   const [lastRunId, setLastRunId] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const revealTimersRef = useRef<number[]>([]);
 
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
+      revealTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
     };
   }, []);
 
@@ -334,10 +447,18 @@ export function ClinTrialWorkspace() {
     });
   }, [items, searchQuery, selectedCategory]);
 
+  const visibleFilteredItems = useMemo(() => {
+    return filteredItems.slice(0, Math.min(visibleItemCount, filteredItems.length));
+  }, [filteredItems, visibleItemCount]);
+
   // Find currently selected item
   const selectedItem = useMemo(() => {
     return items.find((it) => it.id === selectedId) || items[0];
   }, [items, selectedId]);
+
+  const prioritizedEvidence = useMemo(() => {
+    return sortEvidenceByPriority(selectedItem.evidence);
+  }, [selectedItem]);
 
   // Calculate risk items remaining (any item with band !== 'clear')
   const riskCount = useMemo(() => {
@@ -473,10 +594,48 @@ export function ClinTrialWorkspace() {
   const isAgentRunning = agentStatus === 'running';
   const selectedFileError = selectedFile ? invoiceUploadError(selectedFile) : null;
   const canRunAgent = selectedFile !== null && selectedFileError === null && !isAgentRunning;
+  const hasAgentTrace = isAgentRunning || Object.keys(liveTraceCards).length > 0;
+  const agentTraceSteps = useMemo(() => {
+    return agentTracePhaseOrder.map((phase) =>
+      agentTraceStepView(phase, liveTraceCards[phase]),
+    );
+  }, [liveTraceCards]);
 
   // Split audit trail for rendering
   const latestTrail = trail[0];
   const restTrail = trail.slice(1);
+
+  function clearItemRevealTimers(): void {
+    revealTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+    revealTimersRef.current = [];
+  }
+
+  function revealAgentItems(nextItems: TrialItem[]): void {
+    clearItemRevealTimers();
+    setVisibleItemCount(nextItems.length > 0 ? 1 : 0);
+    setResultSequenceKey((currentKey) => currentKey + 1);
+
+    for (let index = 2; index <= nextItems.length; index += 1) {
+      const timerId = window.setTimeout(() => {
+        setVisibleItemCount(index);
+      }, (index - 1) * 70);
+
+      revealTimersRef.current.push(timerId);
+    }
+  }
+
+  function setLocalTraceCard(
+    update: Omit<AgentTraceUpdate, 'type' | 'updatedAt'>,
+  ): void {
+    setLiveTraceCards((currentTraceCards) => ({
+      ...currentTraceCards,
+      [update.id]: {
+        type: 'trace_update',
+        ...update,
+        updatedAt: new Date().toISOString(),
+      },
+    }));
+  }
 
   function applyAgentResult(result: AgentReviewResult): void {
     const nextItems = mapAgentResultToItems(result);
@@ -487,6 +646,7 @@ export function ClinTrialWorkspace() {
       setSelectedCategory('All');
       setSearchQuery('');
       setEvidenceExpanded(true);
+      revealAgentItems(nextItems);
     }
 
     setTrail((prevTrail) => [auditEntryFromAgentResult(result), ...prevTrail]);
@@ -506,7 +666,19 @@ export function ClinTrialWorkspace() {
     }
 
     if (event.type === 'trace_update') {
+      setLiveTraceCards((currentTraceCards) => ({
+        ...currentTraceCards,
+        [event.id]: event,
+      }));
       setAgentMessage(event.headline);
+      return null;
+    }
+
+    if (event.type === 'step') {
+      if (event.status === 'running') {
+        setAgentMessage(`Agent is running: ${event.label}.`);
+      }
+
       return null;
     }
 
@@ -539,6 +711,12 @@ export function ClinTrialWorkspace() {
       setAgentStatus('failed');
       setAgentError(event.message);
       setAgentMessage(event.message);
+      setLocalTraceCard({
+        id: 'upload',
+        status: 'failed',
+        title: 'Backend review failed',
+        headline: event.message,
+      });
       return null;
     }
 
@@ -612,6 +790,7 @@ export function ClinTrialWorkspace() {
     const file = event.target.files?.[0] ?? null;
     setSelectedFile(file);
     setAgentError(null);
+    setLiveTraceCards({});
 
     if (file) {
       const sizeError = invoiceUploadError(file);
@@ -650,10 +829,23 @@ export function ClinTrialWorkspace() {
     abortControllerRef.current?.abort();
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
+    clearItemRevealTimers();
+    setVisibleItemCount(items.length);
+    setLiveTraceCards({});
     setAgentStatus('running');
     setAgentError(null);
     setLastRunId(null);
     setAgentMessage(`Uploading ${selectedFile.name} to backend workflow.`);
+    setLocalTraceCard({
+      id: 'upload',
+      status: 'running',
+      title: 'Upload',
+      headline: `Uploading ${selectedFile.name} to backend workflow.`,
+      progress: {
+        done: 0,
+        total: 1,
+      },
+    });
 
     const formData = new FormData();
     formData.append('invoice', selectedFile);
@@ -692,6 +884,12 @@ export function ClinTrialWorkspace() {
         setAgentStatus('failed');
         setAgentError('Backend review was canceled.');
         setAgentMessage('Backend review was canceled.');
+        setLocalTraceCard({
+          id: 'upload',
+          status: 'failed',
+          title: 'Backend review canceled',
+          headline: 'The browser canceled the running review request.',
+        });
         return;
       }
 
@@ -700,6 +898,12 @@ export function ClinTrialWorkspace() {
       setAgentStatus('failed');
       setAgentError(message);
       setAgentMessage(message);
+      setLocalTraceCard({
+        id: 'upload',
+        status: 'failed',
+        title: 'Request failed',
+        headline: message,
+      });
     } finally {
       if (abortControllerRef.current === abortController) {
         abortControllerRef.current = null;
@@ -879,6 +1083,42 @@ export function ClinTrialWorkspace() {
             </div>
           </div>
         </div>
+
+        {hasAgentTrace && (
+          <div
+            aria-label="Live agent reasoning steps"
+            className="border-t border-slate-200 bg-white px-5 py-2"
+          >
+            <div className="flex gap-2 overflow-x-auto scrollbar-none">
+              {agentTraceSteps.map((step, index) => {
+                const isRunningStep = step.status === 'running';
+
+                return (
+                  <div
+                    aria-current={isRunningStep ? 'step' : undefined}
+                    className={`min-w-[150px] flex-1 rounded border px-2.5 py-2 transition-all duration-200 ${agentTraceStatusStyles[step.status]}`}
+                    key={step.id}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 font-mono text-[9px] font-bold uppercase tracking-wider">
+                        <span className={`h-1.5 w-1.5 rounded-full ${agentTraceDotStyles[step.status]}`}></span>
+                        {String(index + 1).padStart(2, '0')} · {step.title}
+                      </span>
+                      {step.progressLabel && (
+                        <span className="font-mono text-[9px] font-bold tabular-nums">
+                          {step.progressLabel}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1 truncate text-[10.5px] font-semibold">
+                      {compactText(step.headline, 68)}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </header>
 
       {/* ============ CORE WORKSPACE BODY ============ */}
@@ -944,7 +1184,7 @@ export function ClinTrialWorkspace() {
                 No matching line items found.
               </div>
             ) : (
-              filteredItems.map((item) => {
+              visibleFilteredItems.map((item, itemIndex) => {
                 const meta = getStatusMeta(item.status);
                 const isSelected = item.id === selectedId;
 
@@ -953,10 +1193,11 @@ export function ClinTrialWorkspace() {
                     <div
                       key={item.id}
                       onClick={() => handleSelectItem(item.id)}
-                      className="group cursor-pointer border-b border-slate-100 transition-all duration-150 flex items-center justify-between gap-2 hover:bg-slate-100"
+                      className="line-item-enter group cursor-pointer border-b border-slate-100 transition-all duration-150 flex items-center justify-between gap-2 hover:bg-slate-100"
                       style={{
                         padding: '8px 14px',
                         borderLeft: '4px solid transparent',
+                        animationDelay: staggerDelay(itemIndex),
                       }}
                       id={`sidebar-item-compact-${item.id}`}
                     >
@@ -985,9 +1226,10 @@ export function ClinTrialWorkspace() {
                   <div
                     key={item.id}
                     onClick={() => handleSelectItem(item.id)}
-                    className="group cursor-pointer p-3 border-b border-slate-100 transition-all duration-150 flex flex-col gap-1 bg-white"
+                    className="line-item-enter group cursor-pointer p-3 border-b border-slate-100 transition-all duration-150 flex flex-col gap-1 bg-white"
                     style={{
                       borderLeft: '4px solid #0f766e',
+                      animationDelay: staggerDelay(itemIndex),
                     }}
                     id={`sidebar-item-active-${item.id}`}
                   >
@@ -1096,7 +1338,7 @@ export function ClinTrialWorkspace() {
                   {selBand.label}
                 </span>
                 <span className="ml-auto font-mono text-[10px] text-slate-400 font-semibold">
-                  {selectedItem.evidence.length} sources analyzed
+                  {prioritizedEvidence.length} sources analyzed
                 </span>
               </div>
               <div className="text-[13.5px] text-slate-800 leading-relaxed font-medium">
@@ -1106,8 +1348,8 @@ export function ClinTrialWorkspace() {
 
             {/* EVIDENCE - CROSS-REFERENCE MAPPING Accordion */}
             {(() => {
-              const conflictCount = selectedItem.evidence.filter(ev => ev.verdict === 'conflict').length;
-              const warnCount = selectedItem.evidence.filter(ev => ev.verdict === 'warn').length;
+              const conflictCount = prioritizedEvidence.filter(ev => ev.verdict === 'conflict').length;
+              const warnCount = prioritizedEvidence.filter(ev => ev.verdict === 'warn').length;
               return (
                 <div className="mb-6">
                   <button
@@ -1133,14 +1375,21 @@ export function ClinTrialWorkspace() {
                   </button>
 
                   {evidenceExpanded && (
-                    <div className="mt-4 flex flex-col gap-3" id="evidence-accordion-content">
-                      {selectedItem.evidence.map((ev, idx) => {
+                    <div
+                      className="mt-4 flex flex-col gap-3"
+                      id="evidence-accordion-content"
+                      key={`${selectedItem.id}-${resultSequenceKey}`}
+                    >
+                      {prioritizedEvidence.map((ev, idx) => {
                         const verdict = getVerdictMeta(ev.verdict);
                         return (
                           <div
-                            key={idx}
-                            className="bg-white border rounded p-4 transition-all hover:shadow-sm"
-                            style={{ borderColor: verdict.border }}
+                            key={`${ev.src}-${ev.ref}-${idx}`}
+                            className="evidence-source-enter bg-white border rounded p-4 transition-all hover:shadow-sm"
+                            style={{
+                              borderColor: verdict.border,
+                              animationDelay: staggerDelay(idx),
+                            }}
                           >
                             <div className="flex items-center justify-between gap-3 mb-2">
                               <span className="font-mono text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded tracking-wider">
