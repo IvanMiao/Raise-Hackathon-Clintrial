@@ -47,7 +47,7 @@ export function DnaHelix() {
     let nextPulseAt = 1500;
 
     // Tilt around X axis (radians) — gentle so top/bottom read as farther/closer
-    const tiltX = 0;
+    const tiltX = 0.18;
     const sinTx = Math.sin(tiltX);
     const cosTx = Math.cos(tiltX);
 
@@ -62,8 +62,8 @@ export function DnaHelix() {
       const helixH = height - topPad - botPad;
       const float = Math.sin(t * 0.0006) * 4;
 
-      const radius = Math.min(width * 0.24, 120);
-      const turns = 3.2;
+      const radius = Math.min(width * 0.22, 110);
+      const turns = 4;
       const segments = Math.max(120, Math.floor(helixH / 4));
 
       // Perspective
@@ -121,14 +121,12 @@ export function DnaHelix() {
         }
       }
 
-      // Rungs: connect adjacent strands around the ring (0-1, 1-2, ..., last-0)
-      const rungStep = 4;
+      // Rungs: base pairs connecting strand 0 ↔ strand 1 (classic DNA ladder)
+      const rungStep = 3;
       for (let i = 0; i <= segments; i += rungStep) {
-        for (let s = 0; s < STRANDS; s++) {
-          const a = nodes[i * STRANDS + s];
-          const b = nodes[i * STRANDS + ((s + 1) % STRANDS)];
-          items.push({ kind: "rung", z: (a.z + b.z) / 2, a, b });
-        }
+        const a = nodes[i * STRANDS + 0];
+        const b = nodes[i * STRANDS + 1];
+        items.push({ kind: "rung", z: (a.z + b.z) / 2, a, b });
       }
 
       // Update pulses
