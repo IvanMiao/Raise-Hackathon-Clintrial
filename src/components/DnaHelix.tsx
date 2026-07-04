@@ -35,7 +35,7 @@ export function DnaHelix() {
     ro.observe(parent);
 
     // Multi-strand palette (4 strands = fuller, layered helix)
-    const strandColors = ["#2D4F3F", "#1a1a1a", "#5c7a6a", "#3a3a3a"];
+    const strandColors = ["#2D4F3F", "#1a1a1a"];
     const STRANDS = strandColors.length;
     const rungColor = "#d5d0ca";
 
@@ -47,7 +47,7 @@ export function DnaHelix() {
     let nextPulseAt = 1500;
 
     // Tilt around X axis (radians) — gentle so top/bottom read as farther/closer
-    const tiltX = 0.35;
+    const tiltX = 0;
     const sinTx = Math.sin(tiltX);
     const cosTx = Math.cos(tiltX);
 
