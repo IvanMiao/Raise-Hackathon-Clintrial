@@ -3,6 +3,10 @@
 WiseGate is a full-stack TypeScript app built with Next.js. Vultr Serverless
 Inference is called only from server-side code.
 
+## Deployment
+
+WiseGate is deployed on Vultr and available at http://45.77.96.21/.
+
 ## Stack
 
 - Next.js App Router
