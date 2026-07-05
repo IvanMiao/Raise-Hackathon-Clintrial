@@ -25,18 +25,22 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  
   --color-forest: var(--forest);
   --color-ghost: var(--ghost);
   --color-ghost-deep: var(--ghost-deep);
   --color-charcoal: var(--charcoal);
   --color-cream: var(--cream);
   --color-green-dot: var(--green-dot);
+  
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Cormorant Garamond", ui-serif, Georgia, serif;
 }
 
 :root {
   --radius: 0.5rem;
+  
+  /* Editorial Light Mode Palette */
   --cream: #f9f7f4;
   --charcoal: #1a1a1a;
   --forest: #2d4f3f;
@@ -46,10 +50,12 @@
 
   --background: var(--cream);
   --foreground: var(--charcoal);
-  --card: #ffffff;
+  
+  --card: rgba(255, 255, 255, 0.7);
   --card-foreground: var(--charcoal);
   --popover: #ffffff;
   --popover-foreground: var(--charcoal);
+  
   --primary: #2a2a2a;
   --primary-foreground: #ffffff;
   --secondary: #efece7;
@@ -58,9 +64,9 @@
   --muted-foreground: #7a7872;
   --accent: var(--forest);
   --accent-foreground: #ffffff;
-  --destructive: oklch(0.6 0.22 27);
+  --destructive: #ff3366;
   --destructive-foreground: #ffffff;
-  --border: #e8e5e0;
+  --border: rgba(0, 0, 0, 0.05);
   --input: #e8e5e0;
   --ring: var(--forest);
 }
@@ -86,25 +92,84 @@
   font-family: var(--font-sans);
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
   color: var(--muted-foreground);
   font-weight: 500;
 }
 
+/* Elegant Light Glassmorphism */
+@utility glass-panel-light {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.6) 0%, rgba(249, 247, 244, 0.4) 100%);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 8px 32px rgba(26, 26, 26, 0.03);
+}
+
+/* Animations */
 @keyframes fade-up {
-  from { opacity: 0; transform: translateY(14px); }
+  from { opacity: 0; transform: translateY(18px); }
   to { opacity: 1; transform: translateY(0); }
 }
 @keyframes ghost-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from { opacity: 0; transform: scale(0.97) translateX(-3%); }
+  to { opacity: 0.8; transform: scale(1) translateX(0); }
+}
+@keyframes dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 6px rgba(76, 175, 80, 0.4); }
+  50% { opacity: 0.6; transform: scale(1.4); box-shadow: 0 0 12px rgba(76, 175, 80, 0.6); }
+}
+@keyframes helix-entrance {
+  from { opacity: 0; transform: scale(0.92); filter: blur(6px); }
+  to { opacity: 1; transform: scale(1); filter: blur(0px); }
+}
+@keyframes mask-reveal {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-16px); }
+}
+@keyframes float-delayed {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
 }
 
 @utility animate-fade-up {
-  animation: fade-up 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: fade-up 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 @utility animate-ghost-in {
-  animation: ghost-in 2s ease-out both;
+  animation: ghost-in 2.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@utility animate-dot-pulse {
+  animation: dot-pulse 2.4s ease-in-out infinite;
+}
+@utility animate-helix-entrance {
+  animation: helix-entrance 1.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 400ms;
+}
+@utility animate-reveal {
+  animation: mask-reveal 1.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@utility animate-float-slow {
+  animation: float-slow 6s ease-in-out infinite;
+}
+@utility animate-float-delayed {
+  animation: float-delayed 8s ease-in-out infinite;
+  animation-delay: 2s;
 }
 
-
+/* Paper Grain Noise Texture */
+@utility bg-noise {
+  position: relative;
+  &::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    z-index: 50;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+    opacity: 0.8; /* Subtle paper texture */
+  }
+}

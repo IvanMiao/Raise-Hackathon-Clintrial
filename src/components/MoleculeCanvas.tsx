@@ -27,24 +27,34 @@ export function MoleculeCanvas() {
     ro.observe(canvas);
 
     type Node = { x: number; y: number; vx: number; vy: number; r: number };
-    const NODE_COUNT = 25;
+    const NODE_COUNT = 30;
     const nodes: Node[] = Array.from({ length: NODE_COUNT }, () => ({
       x: Math.random() * width,
       y: Math.random() * height,
-      vx: (Math.random() - 0.5) * 0.06,
-      vy: (Math.random() - 0.5) * 0.06,
-      r: 1.2 + Math.random() * 2.2,
+      vx: (Math.random() - 0.5) * 0.08,
+      vy: (Math.random() - 0.5) * 0.08,
+      r: 1.0 + Math.random() * 2.0,
     }));
+
+    // Gentle unified drift direction
+    const driftX = 0.006;
+    const driftY = -0.004;
 
     const MAX_DIST = 180;
 
     const tick = () => {
       ctx.clearRect(0, 0, width, height);
       for (const n of nodes) {
-        n.x += n.vx;
-        n.y += n.vy;
+        n.x += n.vx + driftX;
+        n.y += n.vy + driftY;
         if (n.x < 0 || n.x > width) n.vx *= -1;
         if (n.y < 0 || n.y > height) n.vy *= -1;
+        
+        // Wrap slightly off-screen to keep density uniform
+        if (n.x > width + 10) n.x = -5;
+        if (n.x < -10) n.x = width + 5;
+        if (n.y > height + 10) n.y = -5;
+        if (n.y < -10) n.y = height + 5;
       }
       for (let i = 0; i < nodes.length; i++) {
         for (let j = i + 1; j < nodes.length; j++) {
@@ -54,9 +64,9 @@ export function MoleculeCanvas() {
           const dy = a.y - b.y;
           const d = Math.hypot(dx, dy);
           if (d < MAX_DIST) {
-            const alpha = (1 - d / MAX_DIST) * 0.3;
-            ctx.strokeStyle = `rgba(232, 229, 224, ${alpha})`;
-            ctx.lineWidth = 0.6;
+            const alpha = (1 - d / MAX_DIST) * 0.4;
+            ctx.strokeStyle = `rgba(225, 221, 215, ${alpha})`;
+            ctx.lineWidth = 0.8;
             ctx.beginPath();
             ctx.moveTo(a.x, a.y);
             ctx.lineTo(b.x, b.y);
@@ -65,7 +75,7 @@ export function MoleculeCanvas() {
         }
       }
       for (const n of nodes) {
-        ctx.fillStyle = "rgba(213, 208, 202, 0.75)";
+        ctx.fillStyle = `rgba(210, 205, 198, 0.8)`;
         ctx.beginPath();
         ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
         ctx.fill();
