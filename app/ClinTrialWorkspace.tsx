@@ -1963,9 +1963,6 @@ export function ClinTrialWorkspace() {
               >
                 Upload invoice
               </button>
-              <p className="text-xs text-slate-400 mt-3">
-                Supports PDF, TIFF, and structured EDI
-              </p>
             </div>
             <button
               className="mt-6 text-sm font-medium text-slate-500 hover:text-teal-700 flex items-center gap-2"
