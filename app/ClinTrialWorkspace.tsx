@@ -35,7 +35,9 @@ import type {
   AgentReviewMode,
   AgentReviewResult,
   AgentTraceEntry,
+  AgentTracePhase,
   AgentTraceKind,
+  AgentTraceStatus,
   BoundaryRecommendation,
   EvidenceCard,
   EvidenceSource,
@@ -54,6 +56,22 @@ type SavedAgentTrace = {
   completedAt: string;
   uploadedFileName: string;
   entries: AgentTraceEntry[];
+};
+
+type LiveAgentStep = {
+  id: AgentTracePhase;
+  status: AgentTraceStatus;
+  title: string;
+  headline: string;
+  detail?: string;
+  tool?: AgentTraceEntry['tool'];
+  progress?: {
+    done: number;
+    total: number;
+    label?: string;
+  };
+  highlights?: string[];
+  updatedAt: string;
 };
 
 type AgentLineItemInput = {
@@ -140,6 +158,33 @@ const traceStatusStyles: Record<NonNullable<AgentTraceEntry['status']>, string> 
   failed: 'bg-rose-50 text-rose-600',
 };
 
+const liveTracePhaseOrder: AgentTracePhase[] = [
+  'upload',
+  'extraction',
+  'planning',
+  'search',
+  'ranking',
+  'evaluation',
+  'summary',
+];
+
+const liveTracePhaseLabels: Record<AgentTracePhase, string> = {
+  upload: 'Upload',
+  extraction: 'Invoice extraction',
+  planning: 'Retrieval planning',
+  search: 'Evidence search',
+  ranking: 'Evidence ranking',
+  evaluation: 'Boundary evaluation',
+  summary: 'Summary',
+};
+
+const liveTraceStatusLabels: Record<AgentTraceStatus, string> = {
+  queued: 'Queued',
+  running: 'Running',
+  done: 'Complete',
+  failed: 'Stopped',
+};
+
 function compactText(value: string, maxLength: number): string {
   const compacted = value.replace(/\s+/g, ' ').trim();
 
@@ -166,6 +211,238 @@ function tracePhaseLabel(phase: AgentTraceEntry['phase']): string {
 
 function traceToolLabel(tool: AgentTraceEntry['tool']): string {
   return tool ? tool.replace(/_/g, ' ') : 'backend workflow';
+}
+
+function liveTracePhaseIndex(phase: AgentTracePhase): number {
+  const index = liveTracePhaseOrder.indexOf(phase);
+
+  return index === -1 ? liveTracePhaseOrder.length : index;
+}
+
+function upsertLiveAgentStep(
+  steps: LiveAgentStep[],
+  nextStep: LiveAgentStep,
+): LiveAgentStep[] {
+  const nextSteps = steps.some((step) => step.id === nextStep.id)
+    ? steps.map((step) => (step.id === nextStep.id ? nextStep : step))
+    : [...steps, nextStep];
+
+  return nextSteps.sort(
+    (left, right) => liveTracePhaseIndex(left.id) - liveTracePhaseIndex(right.id),
+  );
+}
+
+function progressRatio(progress: LiveAgentStep['progress']): number {
+  if (!progress || progress.total <= 0) {
+    return 0;
+  }
+
+  return Math.min(Math.max(progress.done / progress.total, 0), 1);
+}
+
+function LiveAgentTracePanel({
+  agentMessage,
+  agentStatus,
+  shouldReduceMotion,
+  steps,
+}: {
+  agentMessage: string;
+  agentStatus: AgentRunStatus;
+  shouldReduceMotion: boolean;
+  steps: LiveAgentStep[];
+}) {
+  const visibleSteps: LiveAgentStep[] = steps.length > 0
+    ? steps
+    : [
+        {
+          id: 'upload',
+          status: agentStatus === 'failed' ? 'failed' : 'running',
+          title: 'Preparing backend workflow',
+          headline: agentMessage,
+          updatedAt: '',
+        },
+      ];
+  const runningStep =
+    visibleSteps.find((step) => step.status === 'running') ??
+    visibleSteps.at(-1);
+  const panelTone = agentStatus === 'failed'
+    ? {
+        frame: 'border-rose-200 bg-rose-50/40',
+        badge: 'border-rose-200 bg-rose-50 text-rose-600',
+        icon: 'text-rose-600',
+      }
+    : {
+        frame: 'border-blue-100 bg-blue-50/50',
+        badge: 'border-blue-200 bg-blue-50 text-blue-700',
+        icon: 'text-blue-600',
+      };
+
+  return (
+    <motion.div
+      animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+      aria-live="polite"
+      className="min-h-full"
+      exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
+      initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+      transition={{ duration: shouldReduceMotion ? 0.01 : 0.2 }}
+    >
+      <div className={`rounded border p-4 shadow-sm ${panelTone.frame}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Activity
+                className={`h-4 w-4 ${panelTone.icon} ${
+                  agentStatus === 'running' && !shouldReduceMotion ? 'animate-pulse' : ''
+                }`}
+              />
+              <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-slate-600">
+                {agentStatus === 'failed' ? 'Agent stopped' : 'Agent is working'}
+              </span>
+            </div>
+            <div className="mt-1 text-[13px] font-bold leading-snug text-slate-800">
+              {runningStep?.headline ?? agentMessage}
+            </div>
+          </div>
+          <span
+            className={`flex-none rounded border px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${panelTone.badge}`}
+          >
+            {agentStatus === 'failed' ? 'Stopped' : 'Live'}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-2.5">
+        <AnimatePresence initial={false}>
+          {visibleSteps.map((step, index) => {
+            const isRunningStep = step.status === 'running';
+            const isDoneStep = step.status === 'done';
+            const isFailedStep = step.status === 'failed';
+            const ratio = progressRatio(step.progress);
+            const rowTone = isRunningStep
+              ? 'border-blue-200 bg-white shadow-sm ring-1 ring-blue-100'
+              : isFailedStep
+                ? 'border-rose-200 bg-white'
+                : 'border-slate-200 bg-white/80';
+            const iconTone = isRunningStep
+              ? 'border-blue-200 bg-blue-50 text-blue-700'
+              : isFailedStep
+                ? 'border-rose-200 bg-rose-50 text-rose-600'
+                : 'border-slate-200 bg-slate-50 text-slate-400';
+            const textTone = isRunningStep
+              ? 'text-slate-900'
+              : isFailedStep
+                ? 'text-rose-700'
+                : 'text-slate-500';
+
+            return (
+              <motion.div
+                animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                className={`rounded border p-3 transition-colors ${rowTone}`}
+                exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.99 }}
+                initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.99 }}
+                key={step.id}
+                layout={!shouldReduceMotion}
+                transition={{
+                  delay: motionStaggerDelay(index, shouldReduceMotion),
+                  duration: shouldReduceMotion ? 0.01 : 0.18,
+                }}
+              >
+                <div className="flex items-start gap-3">
+                  <span
+                    className={`mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full border ${iconTone}`}
+                  >
+                    {isRunningStep ? (
+                      <Activity
+                        className={`h-3.5 w-3.5 ${
+                          shouldReduceMotion ? '' : 'animate-pulse'
+                        }`}
+                      />
+                    ) : isFailedStep ? (
+                      <AlertCircle className="h-3.5 w-3.5" />
+                    ) : (
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                    )}
+                  </span>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`text-[12.5px] font-bold leading-snug ${textTone}`}>
+                        {step.title}
+                      </span>
+                      <span
+                        className={`rounded px-1.5 py-0.5 font-mono text-[8.5px] font-bold uppercase ${
+                          isRunningStep
+                            ? 'bg-blue-50 text-blue-700'
+                            : isFailedStep
+                              ? 'bg-rose-50 text-rose-600'
+                              : 'bg-slate-100 text-slate-400'
+                        }`}
+                      >
+                        {liveTraceStatusLabels[step.status]}
+                      </span>
+                    </div>
+
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[8.5px] font-semibold uppercase tracking-wider text-slate-500">
+                        {liveTracePhaseLabels[step.id]}
+                      </span>
+                      {step.tool && (
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[8.5px] font-semibold text-slate-500">
+                          {traceToolLabel(step.tool)}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className={`mt-2 text-[11.5px] leading-relaxed ${isDoneStep ? 'text-slate-400' : 'text-slate-600'}`}>
+                      {compactText(step.detail ?? step.headline, 140)}
+                    </div>
+
+                    {step.progress && (
+                      <div className="mt-3">
+                        <div className="flex items-center justify-between gap-2 font-mono text-[8.5px] font-semibold uppercase tracking-wider text-slate-400">
+                          <span>{step.progress.label ?? 'Progress'}</span>
+                          <span>
+                            {step.progress.done}/{step.progress.total}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 h-1.5 overflow-hidden rounded bg-slate-100">
+                          <motion.div
+                            animate={{ scaleX: ratio }}
+                            className={`h-full origin-left rounded ${
+                              isFailedStep
+                                ? 'bg-rose-500'
+                                : isDoneStep
+                                  ? 'bg-slate-300'
+                                  : 'bg-blue-500'
+                            }`}
+                            initial={false}
+                            transition={{ duration: shouldReduceMotion ? 0.01 : 0.18 }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {isRunningStep && step.highlights && step.highlights.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {step.highlights.slice(0, 2).map((highlight) => (
+                          <div
+                            className="rounded border border-blue-100 bg-blue-50/60 px-2 py-1 text-[10.5px] font-semibold leading-snug text-blue-700"
+                            key={highlight}
+                          >
+                            {compactText(highlight, 96)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })}
+        </AnimatePresence>
+      </div>
+    </motion.div>
+  );
 }
 
 function parseSavedAgentTrace(rawValue: string | null): SavedAgentTrace | null {
@@ -513,6 +790,7 @@ export function ClinTrialWorkspace() {
   const [agentTraceExpanded, setAgentTraceExpanded] = useState<boolean>(false);
   const [agentTraceSnapshot, setAgentTraceSnapshot] =
     useState<SavedAgentTrace | null>(null);
+  const [liveAgentSteps, setLiveAgentSteps] = useState<LiveAgentStep[]>([]);
   const [showAiNotes, setShowAiNotes] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
@@ -748,6 +1026,12 @@ export function ClinTrialWorkspace() {
   const selBand = selectedItem ? getBandMeta(selectedItem.band) : getBandMeta('review');
   const selectedEvidenceReady = prioritizedEvidence.length > 0;
   const selectedBoundaryReady = selectedItem !== null && selectedItem.status !== 'pending';
+  const shouldShowLiveAgentTrace =
+    agentStatus === 'running' ||
+    agentStatus === 'failed' ||
+    (liveAgentSteps.length > 0 && agentStatus !== 'done' && !selectedBoundaryReady);
+  const shouldShowBoundaryResult =
+    selectedBoundaryReady && selectedItem !== null && !shouldShowLiveAgentTrace;
   const evidenceHeroTone = !selectedBoundaryReady
     ? {
         card: 'bg-blue-50/40 border-blue-100 border-l-blue-500',
@@ -855,6 +1139,7 @@ export function ClinTrialWorkspace() {
     setTrail([]);
     setAgentTraceExpanded(false);
     setAgentTraceSnapshot(null);
+    setLiveAgentSteps([]);
     removeSavedAgentTrace();
     setSearchQuery('');
     setSelectedCategory('All');
@@ -1006,6 +1291,17 @@ export function ClinTrialWorkspace() {
     }
 
     if (event.type === 'trace_update') {
+      setLiveAgentSteps((currentSteps) => upsertLiveAgentStep(currentSteps, {
+        id: event.id,
+        status: event.status,
+        title: event.title,
+        headline: event.headline,
+        detail: event.detail,
+        tool: event.tool,
+        progress: event.progress,
+        highlights: event.highlights,
+        updatedAt: event.updatedAt,
+      }));
       if (event.id === 'upload' || event.id === 'extraction') {
         setScanPreviewPhase(event.id);
       }
@@ -1155,6 +1451,7 @@ export function ClinTrialWorkspace() {
     setSelectedFile(file);
     setAgentError(null);
     setLastExtractedLineCount(0);
+    setLiveAgentSteps([]);
 
     if (file) {
       const sizeError = invoiceUploadError(file);
@@ -1207,6 +1504,7 @@ export function ClinTrialWorkspace() {
     setSearchQuery('');
     setEvidenceExpanded(false);
     setAgentTraceExpanded(false);
+    setLiveAgentSteps([]);
     setDecision('');
     setReason('');
     setVisibleItemCount(0);
@@ -1990,8 +2288,16 @@ export function ClinTrialWorkspace() {
           </div>
 
           <div className="flex-1 overflow-y-auto min-h-0 p-5 bg-slate-50/20">
-            {selectedBoundaryReady && selectedItem ? (
-              <>
+            <AnimatePresence initial={false} mode="wait">
+            {shouldShowBoundaryResult && selectedItem ? (
+              <motion.div
+                key={`boundary-result-${selectedItem.id}-${resultSequenceKey}`}
+                animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+                className="min-h-full"
+                exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
+                initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+                transition={{ duration: shouldReduceMotion ? 0.01 : 0.2 }}
+              >
             {/* HERO SCORE & CONFIDENCE BLOCK */}
             <div 
               className={`border p-4.5 transition-all duration-200 rounded shadow-sm ${
@@ -2142,9 +2448,24 @@ export function ClinTrialWorkspace() {
                 <span className="text-[13px]">&rarr;</span> {getBandRouting(selectedItem.band)}
               </div>
             </div>
-              </>
+              </motion.div>
+            ) : shouldShowLiveAgentTrace ? (
+              <LiveAgentTracePanel
+                key="live-agent-trace"
+                agentMessage={agentMessage}
+                agentStatus={agentStatus}
+                shouldReduceMotion={shouldReduceMotion}
+                steps={liveAgentSteps}
+              />
             ) : (
-              <div className="h-full min-h-[360px] flex items-center justify-center text-center">
+              <motion.div
+                key="boundary-empty"
+                animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+                className="h-full min-h-[360px] flex items-center justify-center text-center"
+                exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
+                initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+                transition={{ duration: shouldReduceMotion ? 0.01 : 0.18 }}
+              >
                 <div className="max-w-xs">
                   <div className="mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded border border-slate-200 bg-white text-slate-400">
                     <SlidersHorizontal className="h-4 w-4" />
@@ -2158,8 +2479,9 @@ export function ClinTrialWorkspace() {
                       : 'Compliance scores appear after backend review completes.'}
                   </div>
                 </div>
-              </div>
+              </motion.div>
             )}
+            </AnimatePresence>
           </div>
 
           {/* BOTTOM TRACE AND AUDIT LOGS */}
