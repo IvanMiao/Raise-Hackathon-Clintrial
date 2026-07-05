@@ -1629,7 +1629,7 @@ export function ClinTrialWorkspace() {
               <span className="text-[19px] font-bold tracking-tight text-teal-700">Trial</span>
             </div>
             <span className="hidden sm:inline-block ml-3 font-mono text-[10px] tracking-widest text-[#64748b] border-l border-slate-200 pl-3 uppercase">
-              Invoice Audit Workspace
+              Workspace
             </span>
           </div>
           
