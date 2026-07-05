@@ -1,6 +1,6 @@
-# TrialGuard Synthetic Demo Data
+# ClinTrial Synthetic Demo Data
 
-This folder contains synthetic evidence for the TrialGuard hackathon demo.
+This folder contains synthetic evidence for the ClinTrial hackathon demo.
 
 - `Prot_000.pdf`: source protocol evidence.
 - `CTA_Financial_Appendix_Excerpt.pdf`: source CTA / budget evidence.
@@ -10,7 +10,7 @@ This folder contains synthetic evidence for the TrialGuard hackathon demo.
 - `site_evidence_log.csv`: compact EDC / source-binder / site-operations evidence log.
 - `prior_payment_ledger.csv`: compact paid-line history for duplicate checks.
 
-The invoice is intentionally represented as an uploaded image plus an extraction fixture, rather than as the source of truth. TrialGuard should use the fixture as the mocked output of OCR/document extraction, then evaluate each line against the coverage grid, site evidence log, and prior ledger.
+The invoice is intentionally represented as an uploaded image plus an extraction fixture, rather than as the source of truth. ClinTrial should use the fixture as the mocked output of OCR/document extraction, then evaluate each line against the coverage grid, site evidence log, and prior ledger.
 
 The data keeps a small amount of realistic messiness:
 

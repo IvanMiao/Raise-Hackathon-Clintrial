@@ -6,7 +6,7 @@ import {
   CheckCircle2,
   FileText,
 } from 'lucide-react';
-import { motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
 export type InvoiceScanPhase =
   | 'ready'
@@ -21,6 +21,7 @@ type InvoiceScanPreviewProps = {
   fileType: string;
   lineCount: number;
   message: string;
+  onChangeFile: () => void;
   onRunReview: () => void;
   phase: InvoiceScanPhase;
   previewUrl: string | null;
@@ -144,6 +145,7 @@ export function InvoiceScanPreview({
   fileType,
   lineCount,
   message,
+  onChangeFile,
   onRunReview,
   phase,
   previewUrl,
@@ -214,16 +216,35 @@ export function InvoiceScanPreview({
               </div>
             )}
 
+            <AnimatePresence initial={false}>
             {isScanning && (
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-16 invoice-scan-line">
-                <div className="mx-4 h-px bg-blue-500 shadow-[0_0_16px_rgba(59,130,246,0.9)]" />
-                <div className="mx-4 h-16 bg-gradient-to-b from-blue-400/20 to-transparent" />
-              </div>
+              <motion.div
+                animate={{ opacity: 1 }}
+                className="pointer-events-none absolute inset-x-0 top-0 h-16 transition-opacity duration-300 ease-in-out"
+                exit={{ opacity: 0 }}
+                initial={{ opacity: 0 }}
+                transition={{ duration: 0.25 }}
+              >
+                <div className="invoice-scan-line">
+                  <div className="mx-4 h-px bg-blue-500 shadow-[0_0_16px_rgba(59,130,246,0.9)]" />
+                  <div className="mx-4 h-16 bg-gradient-to-b from-blue-400/20 to-transparent" />
+                </div>
+              </motion.div>
             )}
+            </AnimatePresence>
           </div>
         </div>
 
         <div className="flex min-w-0 flex-col justify-center">
+          <AnimatePresence initial={false} mode="wait">
+          <motion.div
+            animate={{ opacity: 1, y: 0 }}
+            className="transition-opacity duration-300 ease-in-out"
+            exit={{ opacity: 0, y: -2 }}
+            initial={{ opacity: 0, y: 2 }}
+            key={`${phase}-${message}`}
+            transition={{ duration: 0.25 }}
+          >
           <div className="mb-3 flex flex-wrap items-center gap-2">
             <span
               className={`rounded border px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider ${copy.tone}`}
@@ -241,6 +262,8 @@ export function InvoiceScanPreview({
           <p className="mt-2 max-w-xl text-[13px] leading-relaxed text-slate-500">
             {message}
           </p>
+          </motion.div>
+          </AnimatePresence>
 
           <div className="mt-4 rounded border border-slate-200 bg-slate-50 px-3 py-2">
             <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-slate-400">
@@ -267,8 +290,9 @@ export function InvoiceScanPreview({
           </ol>
 
           {(phase === 'ready' || isFailed) && (
+            <div className="mt-6 flex min-h-11 w-fit items-center">
             <button
-              className={`mt-6 min-h-11 w-fit rounded px-4 text-[12px] font-bold transition-all duration-150 active:scale-95 ${
+              className={`min-h-11 w-fit rounded px-4 text-[12px] font-bold transition-all duration-150 active:scale-95 ${
                 canRunReview
                   ? 'cursor-pointer bg-[#0f766e] text-white hover:bg-teal-800'
                   : 'cursor-not-allowed bg-slate-200 text-slate-500'
@@ -279,6 +303,17 @@ export function InvoiceScanPreview({
             >
               {isFailed ? 'Retry review' : 'Run review'}
             </button>
+            {/* Only visible when an invoice has been staged/paused/completed — hidden in empty state */}
+            {isFailed && (
+              <button
+                className="text-slate-500 hover:text-slate-800 font-medium px-4 text-[12.5px]"
+                onClick={onChangeFile}
+                type="button"
+              >
+                Change file
+              </button>
+            )}
+            </div>
           )}
 
           {isComplete && (

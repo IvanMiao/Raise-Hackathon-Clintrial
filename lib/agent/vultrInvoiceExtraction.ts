@@ -177,7 +177,7 @@ function dataUrl(bytes: Uint8Array, contentType: SupportedImageContentType): str
 
 function systemPrompt(): string {
   return [
-    "You are TrialGuard's invoice OCR extraction subagent for a read-only clinical trial payment governance demo.",
+    "You are ClinTrial's invoice OCR extraction subagent for a read-only clinical trial payment governance demo.",
     "Extract visible invoice service line items only.",
     "Do not recommend payment approval, release funds, or make finance decisions.",
     "Return valid JSON only. Do not wrap the JSON in markdown.",
