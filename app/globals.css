@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -7,6 +7,15 @@
 :root {
   color-scheme: light;
   background: #f6f7f9;
+  --landing-cream: #faf7f0;
+  --landing-paper: #fffdf8;
+  --landing-ink: #171a1f;
+  --landing-forest: #2d4f3f;
+  --landing-blue: #2458d3;
+  --landing-teal: #0f766e;
+  --landing-amber: #b45309;
+  --landing-line: #d8d6cf;
+  --landing-serif: "Cormorant Garamond", Georgia, serif;
 }
 
 * {
@@ -104,11 +113,140 @@ select {
   animation: invoice-scan-line 1600ms cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
 }
 
+.font-display {
+  font-family: var(--landing-serif);
+  font-feature-settings: "liga", "dlig", "kern";
+}
+
+.label-eyebrow {
+  color: #64748b;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.landing-page {
+  min-height: 100vh;
+  background:
+    linear-gradient(135deg, rgba(250, 247, 240, 0.98), rgba(247, 249, 252, 0.96)),
+    var(--landing-cream);
+  color: var(--landing-ink);
+}
+
+.landing-noise::before {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  content: "";
+  background-image:
+    linear-gradient(rgba(45, 79, 63, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(36, 88, 211, 0.035) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: linear-gradient(90deg, rgba(0, 0, 0, 0.34), rgba(0, 0, 0, 0.08));
+}
+
+.landing-green-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.625rem;
+  border-radius: 999px;
+  background: var(--landing-forest);
+  box-shadow: 0 0 0 4px rgba(45, 79, 63, 0.12);
+}
+
+.landing-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 3.25rem;
+  padding: 0 1.5rem;
+  border: 1px solid rgba(45, 79, 63, 0.88);
+  border-radius: 999px;
+  background: var(--landing-forest);
+  color: #ffffff;
+  font-weight: 700;
+  text-decoration: none;
+  box-shadow: 0 12px 28px rgba(45, 79, 63, 0.18);
+  transition:
+    box-shadow 200ms ease,
+    transform 200ms ease;
+}
+
+.landing-cta:hover {
+  box-shadow: 0 16px 34px rgba(45, 79, 63, 0.22);
+  transform: translateY(-1px);
+}
+
+.landing-cta:focus-visible {
+  outline: 3px solid rgba(36, 88, 211, 0.34);
+  outline-offset: 3px;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.62;
+    transform: scale(1.35);
+  }
+}
+
+@keyframes helix-entrance {
+  from {
+    filter: blur(6px);
+    opacity: 0;
+    transform: scale(0.92);
+  }
+
+  to {
+    filter: blur(0);
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 900ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.landing-green-dot {
+  animation: dot-pulse 2400ms ease-in-out infinite;
+}
+
+.animate-helix-entrance {
+  animation: helix-entrance 1800ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: 400ms;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .trace-card-enter,
   .evidence-source-enter,
   .trace-log-enter,
-  .invoice-scan-line {
+  .invoice-scan-line,
+  .animate-fade-up,
+  .landing-green-dot,
+  .animate-helix-entrance {
     animation: none;
   }
 }

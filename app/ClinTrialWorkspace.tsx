@@ -186,6 +186,19 @@ const liveTraceStatusLabels: Record<AgentTraceStatus, string> = {
 
 const vultrServerlessInferenceLabel = 'Vultr Serverless Inference';
 
+const boundaryContainerVariants = {
+  hidden: { opacity: 0, scale: 0.95, y: 15 },
+  visible: {
+    opacity: 1, scale: 1, y: 0,
+    transition: { type: 'spring' as const, stiffness: 260, damping: 20, staggerChildren: 0.1 }
+  },
+  exit: { opacity: 0, scale: 0.95, y: -10, transition: { duration: 0.2 } }
+};
+
+const boundaryItemVariants = {
+  hidden: { opacity: 0, y: 15 },
+  visible: { opacity: 1, y: 0, transition: { type: 'spring' as const, stiffness: 300, damping: 24 } }
+};
 function compactText(value: string, maxLength: number): string {
   const compacted = value.replace(/\s+/g, ' ').trim();
 
@@ -317,12 +330,12 @@ function LiveAgentTracePanel({
 
   return (
     <motion.div
-      animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+      animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, x: 0 }}
       aria-live="polite"
-      className="min-h-full"
-      exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
-      initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
-      transition={{ duration: shouldReduceMotion ? 0.01 : 0.2 }}
+      className="min-h-full relative"
+      exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, x: 30, scale: 0.95, transition: { duration: 0.25, ease: "easeIn" } }}
+      initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, x: 50 }}
+      transition={{ duration: shouldReduceMotion ? 0.01 : 0.3 }}
     >
       <div className={`rounded border p-4 shadow-sm ${panelTone.frame}`}>
         <div className="flex items-start justify-between gap-3">
@@ -386,17 +399,22 @@ function LiveAgentTracePanel({
 
             return (
               <motion.div
-                animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1, boxShadow: isActiveStep && isRunningStep ? ["0px 0px 0px rgba(59,130,246,0)", "0px 0px 15px rgba(59,130,246,0.3)", "0px 0px 0px rgba(59,130,246,0)"] : "0px 0px 0px rgba(0,0,0,0)" }}
                 aria-current={isActiveStep ? 'step' : undefined}
                 className={`rounded border p-3 transition-colors ${rowTone}`}
-                exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.99 }}
-                initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.99 }}
+                exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, x: 20, scale: 0.95 }}
+                initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 15, scale: 0.95 }}
                 key={step.id}
                 layout={!shouldReduceMotion}
                 ref={isActiveStep ? activeStepRef : undefined}
-                transition={{
+                transition={isActiveStep && isRunningStep ? {
                   delay: motionStaggerDelay(index, shouldReduceMotion),
-                  duration: shouldReduceMotion ? 0.01 : 0.18,
+                  duration: shouldReduceMotion ? 0.01 : 0.25,
+                  boxShadow: { repeat: Infinity, duration: 2, ease: "easeInOut" }
+                } : {
+                  delay: motionStaggerDelay(index, shouldReduceMotion),
+                  duration: shouldReduceMotion ? 0.01 : 0.25,
+                  type: "spring", stiffness: 200, damping: 20
                 }}
               >
                 <div className="flex items-start gap-3">
@@ -1709,8 +1727,8 @@ export function ClinTrialWorkspace() {
                 strokeWidth="7"
               />
             </svg>
-            <div className="flex items-baseline gap-0.5">
-              <span className="text-[19px] font-bold tracking-tight text-slate-800">Clien</span>
+            <div aria-label="ClinTrial" className="flex items-baseline">
+              <span className="text-[19px] font-bold tracking-tight text-slate-800">Clin</span>
               <span className="text-[19px] font-bold tracking-tight text-teal-700">Trial</span>
             </div>
             <span className="hidden sm:inline-block ml-3 font-mono text-[10px] tracking-widest text-[#64748b] border-l border-slate-200 pl-3 uppercase">
@@ -2381,14 +2399,14 @@ export function ClinTrialWorkspace() {
             {shouldShowBoundaryResult && selectedItem ? (
               <motion.div
                 key={`boundary-result-${selectedItem.id}-${resultSequenceKey}`}
-                animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+                animate={shouldReduceMotion ? { opacity: 1 } : "visible"}
                 className="min-h-full"
-                exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
-                initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
-                transition={{ duration: shouldReduceMotion ? 0.01 : 0.2 }}
+                exit={shouldReduceMotion ? { opacity: 0 } : "exit"}
+                initial={shouldReduceMotion ? { opacity: 0 } : "hidden"}
+                variants={boundaryContainerVariants}
               >
             {/* HERO SCORE & CONFIDENCE BLOCK */}
-            <div 
+            <motion.div variants={shouldReduceMotion ? undefined : boundaryItemVariants}
               className={`border p-4.5 transition-all duration-200 rounded shadow-sm ${
                 selectedItem.complianceScore < 85
                   ? 'bg-rose-50/40 border-rose-200'
@@ -2428,10 +2446,10 @@ export function ClinTrialWorkspace() {
                   <div className="text-[10.5px] text-slate-400 mt-0.5 font-medium">model certainty</div>
                 </div>
               </div>
-            </div>
+            </motion.div>
 
             {/* Threshold Gauge Block */}
-            <div className="mt-4 border border-slate-200 rounded p-4 relative bg-white shadow-sm">
+            <motion.div variants={shouldReduceMotion ? undefined : boundaryItemVariants} className="mt-4 border border-slate-200 rounded p-4 relative bg-white shadow-sm">
               <div className="flex items-center gap-1.5 mb-4 select-none">
                 <span className="font-mono text-[9.5px] tracking-wider uppercase text-slate-500 font-semibold">
                   Boundary threshold gauge
@@ -2497,10 +2515,10 @@ export function ClinTrialWorkspace() {
                 <span className="text-amber-600">Auditor review</span>
                 <span className="text-teal-700">Auto-clear (85%)</span>
               </div>
-            </div>
+            </motion.div>
 
             {/* GCP Rules mapped */}
-            <div className="mt-4">
+            <motion.div variants={shouldReduceMotion ? undefined : boundaryItemVariants} className="mt-4">
               <div className="font-mono text-[9.5px] tracking-wider uppercase text-slate-500 font-semibold mb-2">
                 GCP rule mapping
               </div>
@@ -2514,10 +2532,10 @@ export function ClinTrialWorkspace() {
                   </span>
                 ))}
               </div>
-            </div>
+            </motion.div>
 
             {/* Bottom recommendation card */}
-            <div 
+            <motion.div variants={shouldReduceMotion ? undefined : boundaryItemVariants}
               className="mt-4 border-l-4 p-3.5 transition-all duration-200 rounded shadow-sm"
               style={{
                 backgroundColor: selBand.bg,
@@ -2536,7 +2554,7 @@ export function ClinTrialWorkspace() {
               <div className="mt-2 flex items-center gap-1.5 text-[11.5px] font-bold" style={{ color: selBand.accent }}>
                 <span className="text-[13px]">&rarr;</span> {getBandRouting(selectedItem.band)}
               </div>
-            </div>
+            </motion.div>
               </motion.div>
             ) : shouldShowLiveAgentTrace ? (
               <LiveAgentTracePanel

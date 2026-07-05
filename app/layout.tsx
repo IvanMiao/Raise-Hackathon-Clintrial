@@ -6,7 +6,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "ClinTrial",
   description:
-    "Read-only clinical trial payment evidence review and automation boundary governance.",
+    "Read-only clinical trial payment evidence review and automation boundary governance workspace.",
 };
 
 export default function RootLayout({
