@@ -1,11 +1,20 @@
-# WiseGate
+# ClinTrial
 
-WiseGate is a full-stack TypeScript app built with Next.js. Vultr Serverless
-Inference is called only from server-side code.
+ClinTrial is a read-only clinical trial payment evidence review and automation
+boundary governance demo built with Next.js. It surfaces evidence, classifies
+review boundaries, and drafts audit context, but it must not approve payments,
+release funds, or mutate real clinical or financial systems.
+
+Vultr Serverless Inference is called only from server-side code.
 
 ## Deployment
 
-WiseGate is deployed on Vultr and available at http://45.77.96.21/.
+ClinTrial is deployed on Vultr and available at http://45.77.96.21/.
+
+## App Entrypoints
+
+- `/`: landing page
+- `/workspace`: clinical trial invoice evidence review workspace
 
 ## Stack
 
@@ -52,12 +61,19 @@ Use `VULTR_EVIDENCE_RANKER_MODEL` to force a single model, or set a
 comma-separated `VULTR_EVIDENCE_RANKER_MODELS` list to control fallback order.
 The evidence ranker does not inherit `VULTR_MODEL`; set it explicitly to a
 chat-completion model only when you want the JSON evidence-ranker prompt
-instead. If ranking fails, WiseGate falls back to deterministic evidence
+instead. If ranking fails, ClinTrial falls back to deterministic evidence
 ordering.
-WiseGate does not send `max_tokens` by default; set `VULTR_MAX_TOKENS` or
+ClinTrial does not send `max_tokens` by default; set `VULTR_MAX_TOKENS` or
 `VULTR_INVOICE_EXTRACTION_MAX_TOKENS` /
 `VULTR_RETRIEVAL_PLANNER_MAX_TOKENS` /
 `VULTR_EVIDENCE_RANKER_MAX_TOKENS` only when you explicitly want a cap.
+
+## Demo Data
+
+The `data/` folder contains synthetic clinical trial payment evidence for the
+demo, including protocol, CTA/budget, coverage grid, invoice extraction, site
+evidence, and prior payment ledger fixtures. It must not be treated as real
+clinical, financial, or patient data.
 
 ## Development
 
@@ -66,16 +82,9 @@ npm install
 npm run dev
 ```
 
-The server-side inference endpoint is:
+Before shipping code changes, run:
 
-```txt
-POST /api/inference
-```
-
-Request body:
-
-```json
-{
-  "prompt": "Review this invoice line item."
-}
+```bash
+npm run typecheck
+npm run build
 ```
