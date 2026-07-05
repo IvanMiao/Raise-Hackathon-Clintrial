@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { 
-  ShieldCheck, 
   AlertTriangle, 
   Lock, 
   Search, 
@@ -185,6 +184,8 @@ const liveTraceStatusLabels: Record<AgentTraceStatus, string> = {
   failed: 'Stopped',
 };
 
+const vultrServerlessInferenceLabel = 'Vultr Serverless Inference';
+
 function compactText(value: string, maxLength: number): string {
   const compacted = value.replace(/\s+/g, ' ').trim();
 
@@ -211,6 +212,23 @@ function tracePhaseLabel(phase: AgentTraceEntry['phase']): string {
 
 function traceToolLabel(tool: AgentTraceEntry['tool']): string {
   return tool ? tool.replace(/_/g, ' ') : 'backend workflow';
+}
+
+function liveTraceVultrModelLabel(step: LiveAgentStep): string | null {
+  if (step.id === 'extraction' || step.tool === 'invoice_vision_extractor') {
+    return 'Vultr vision model';
+  }
+
+  if (
+    step.id === 'planning' ||
+    step.id === 'ranking' ||
+    step.tool === 'retrieval_planner' ||
+    step.tool === 'evidence_ranker'
+  ) {
+    return 'Vultr retrieval model';
+  }
+
+  return null;
 }
 
 function liveTracePhaseIndex(phase: AgentTracePhase): number {
@@ -262,9 +280,13 @@ function LiveAgentTracePanel({
           updatedAt: '',
         },
       ];
-  const runningStep =
+  const activeStep =
     visibleSteps.find((step) => step.status === 'running') ??
+    visibleSteps.find((step) => step.status === 'failed') ??
     visibleSteps.at(-1);
+  const activeVultrModelLabel = activeStep ? liveTraceVultrModelLabel(activeStep) : null;
+  const activeStepRef = useRef<HTMLDivElement | null>(null);
+  const activeStepId = activeStep?.id ?? null;
   const panelTone = agentStatus === 'failed'
     ? {
         frame: 'border-rose-200 bg-rose-50/40',
@@ -276,6 +298,22 @@ function LiveAgentTracePanel({
         badge: 'border-blue-200 bg-blue-50 text-blue-700',
         icon: 'text-blue-600',
       };
+
+  useEffect(() => {
+    if (!activeStepId) {
+      return undefined;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      activeStepRef.current?.scrollIntoView({
+        behavior: shouldReduceMotion ? 'auto' : 'smooth',
+        block: 'center',
+        inline: 'nearest',
+      });
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [activeStepId, shouldReduceMotion]);
 
   return (
     <motion.div
@@ -300,7 +338,17 @@ function LiveAgentTracePanel({
               </span>
             </div>
             <div className="mt-1 text-[13px] font-bold leading-snug text-slate-800">
-              {runningStep?.headline ?? agentMessage}
+              {activeStep?.headline ?? agentMessage}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="rounded border border-teal-200 bg-white/75 px-1.5 py-0.5 font-mono text-[8.5px] font-semibold text-teal-700">
+                Powered by {vultrServerlessInferenceLabel}
+              </span>
+              {activeVultrModelLabel && (
+                <span className="rounded border border-teal-200 bg-teal-50 px-1.5 py-0.5 font-mono text-[8.5px] font-bold text-teal-700">
+                  {activeVultrModelLabel}
+                </span>
+              )}
             </div>
           </div>
           <span
@@ -317,7 +365,9 @@ function LiveAgentTracePanel({
             const isRunningStep = step.status === 'running';
             const isDoneStep = step.status === 'done';
             const isFailedStep = step.status === 'failed';
+            const isActiveStep = step.id === activeStepId;
             const ratio = progressRatio(step.progress);
+            const vultrModelLabel = liveTraceVultrModelLabel(step);
             const rowTone = isRunningStep
               ? 'border-blue-200 bg-white shadow-sm ring-1 ring-blue-100'
               : isFailedStep
@@ -337,11 +387,13 @@ function LiveAgentTracePanel({
             return (
               <motion.div
                 animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                aria-current={isActiveStep ? 'step' : undefined}
                 className={`rounded border p-3 transition-colors ${rowTone}`}
                 exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.99 }}
                 initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.99 }}
                 key={step.id}
                 layout={!shouldReduceMotion}
+                ref={isActiveStep ? activeStepRef : undefined}
                 transition={{
                   delay: motionStaggerDelay(index, shouldReduceMotion),
                   duration: shouldReduceMotion ? 0.01 : 0.18,
@@ -389,6 +441,17 @@ function LiveAgentTracePanel({
                       {step.tool && (
                         <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[8.5px] font-semibold text-slate-500">
                           {traceToolLabel(step.tool)}
+                        </span>
+                      )}
+                      {vultrModelLabel && (
+                        <span
+                          className={`rounded border px-1.5 py-0.5 font-mono text-[8.5px] font-bold ${
+                            isRunningStep
+                              ? 'border-teal-200 bg-teal-50 text-teal-700'
+                              : 'border-teal-100 bg-teal-50/70 text-teal-600'
+                          }`}
+                        >
+                          {vultrModelLabel}
                         </span>
                       )}
                     </div>
@@ -1619,17 +1682,43 @@ export function ClinTrialWorkspace() {
       {/* ============ PROJECT HEADER ============ */}
       <header className="flex-none bg-white border-b border-slate-200">
         <div className="px-5 py-2.5 flex items-center justify-between gap-5">
-          <div className="flex items-center gap-3">
-            {/* Custom high-contrast ClienTrial logo */}
-            <div className="w-8 h-8 rounded bg-[#0f766e] flex items-center justify-center border border-teal-900/10">
-              <ShieldCheck className="w-5 h-5 text-white" />
-            </div>
+          <div className="flex min-w-0 items-center gap-3">
+            <svg
+              aria-hidden="true"
+              className="h-8 w-8 flex-none"
+              viewBox="0 0 64 64"
+            >
+              <rect x="4" y="4" width="56" height="56" rx="16" fill="#0B3D2E" />
+              <path
+                d="M44 18.5 A19 19 0 1 0 44 45.5"
+                stroke="#fff"
+                strokeLinecap="round"
+                strokeWidth="7.5"
+                fill="none"
+              />
+              <path
+                d="M33 24 H50"
+                stroke="#fff"
+                strokeLinecap="round"
+                strokeWidth="7"
+              />
+              <path
+                d="M41.5 24 V44"
+                stroke="#fff"
+                strokeLinecap="round"
+                strokeWidth="7"
+              />
+            </svg>
             <div className="flex items-baseline gap-0.5">
               <span className="text-[19px] font-bold tracking-tight text-slate-800">Clien</span>
               <span className="text-[19px] font-bold tracking-tight text-teal-700">Trial</span>
             </div>
             <span className="hidden sm:inline-block ml-3 font-mono text-[10px] tracking-widest text-[#64748b] border-l border-slate-200 pl-3 uppercase">
               Workspace
+            </span>
+            <span className="hidden min-w-0 max-w-[270px] items-center gap-1.5 truncate rounded border border-teal-200 bg-teal-50 px-2 py-1 font-mono text-[10px] font-semibold text-teal-700 xl:inline-flex">
+              <Activity className="h-3 w-3 flex-none" aria-hidden="true" />
+              <span className="truncate">Powered by {vultrServerlessInferenceLabel}</span>
             </span>
           </div>
           
