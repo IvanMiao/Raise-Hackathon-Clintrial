@@ -21,8 +21,14 @@ import {
   Eye,
   SlidersHorizontal,
   Bookmark,
-  Clock
+  Clock,
+  RotateCcw
 } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import {
+  InvoiceScanPreview,
+  type InvoiceScanPhase,
+} from './InvoiceScanPreview';
 import type { AuditTrailEntry, EvidenceItem, TrialItem } from './trialTypes';
 import type {
   AgentEvent,
@@ -90,6 +96,24 @@ const evidenceSourceToUiSource: Record<EvidenceSource, string> = {
   site_evidence: 'edc',
   prior_ledger: 'edc',
   invoice_extraction: 'edc',
+};
+
+const evidenceSourceTitles: Record<EvidenceSource, string> = {
+  protocol: 'Protocol',
+  cta_budget: 'CTA budget',
+  coverage_grid: 'Coverage grid',
+  site_evidence: 'Site evidence log',
+  prior_ledger: 'Prior payment ledger',
+  invoice_extraction: 'Invoice extraction',
+};
+
+const locatorAcronyms: Record<string, string> = {
+  cta: 'CTA',
+  ecg: 'ECG',
+  edc: 'EDC',
+  imp: 'IMP',
+  pk: 'PK',
+  uc: 'UC',
 };
 
 const boundaryLabels: Record<BoundaryRecommendation['boundary'], string> = {
@@ -180,6 +204,14 @@ function persistSavedAgentTrace(trace: SavedAgentTrace): void {
   }
 }
 
+function removeSavedAgentTrace(): void {
+  try {
+    window.localStorage.removeItem(traceStorageKey);
+  } catch {
+    // Non-critical: resetting in-memory state still returns the workspace to idle.
+  }
+}
+
 function normalizeErrorPayload(payload: unknown): string {
   if (
     payload &&
@@ -241,16 +273,64 @@ function evidenceVerdict(status: EvidenceCard['status']): EvidenceItem['verdict'
   return 'info';
 }
 
+function readableLocatorFragment(fragment: string): string {
+  return fragment
+    .replace(/[_-]+/g, ' ')
+    .split(' ')
+    .filter(Boolean)
+    .map((token) => {
+      const lowerToken = token.toLowerCase();
+      const acronym = locatorAcronyms[lowerToken];
+
+      if (acronym) {
+        return acronym;
+      }
+
+      return `${lowerToken.slice(0, 1).toUpperCase()}${lowerToken.slice(1)}`;
+    })
+    .join(' ');
+}
+
 function evidenceReference(evidence: EvidenceCard): string {
+  const sourceTitle = evidenceSourceTitles[evidence.sourceType];
+
   if (!evidence.locator) {
-    return evidence.sourceName;
+    return sourceTitle;
   }
 
-  return `${evidence.sourceName} · ${compactText(evidence.locator, 80)}`;
+  const [, rawFragment = ''] = evidence.locator.split('#');
+
+  if (!rawFragment) {
+    return sourceTitle;
+  }
+
+  const locatorParams = new URLSearchParams(rawFragment);
+  const rowNumber = locatorParams.get('row');
+
+  if (rowNumber) {
+    return `${sourceTitle} · Row ${rowNumber}`;
+  }
+
+  const context = [
+    locatorParams.get('patient'),
+    locatorParams.get('visit'),
+    locatorParams.get('item'),
+  ].filter((value): value is string => Boolean(value));
+
+  if (context.length > 0) {
+    const label = evidence.status === 'missing' ? 'No matching row for' : 'Search';
+    return `${sourceTitle} · ${label} ${context.join(' / ')}`;
+  }
+
+  return `${sourceTitle} · ${readableLocatorFragment(rawFragment)}`;
 }
 
 function staggerDelay(index: number): string {
   return `${Math.min(index * 45, 270)}ms`;
+}
+
+function motionStaggerDelay(index: number, shouldReduceMotion: boolean): number {
+  return shouldReduceMotion ? 0 : Math.min(index * 0.045, 0.27);
 }
 
 function sortEvidenceByPriority(evidence: EvidenceItem[]): EvidenceItem[] {
@@ -270,6 +350,7 @@ function mapEvidenceCard(evidence: EvidenceCard): EvidenceItem {
   return {
     src: evidenceSourceToUiSource[evidence.sourceType] ?? evidence.sourceType,
     ref: evidenceReference(evidence),
+    locator: evidence.locator,
     verdict: evidenceVerdict(evidence.status),
     text: evidence.excerpt || evidence.finding,
     ai: evidence.finding,
@@ -420,6 +501,7 @@ function savedTraceFromAgentResult(result: AgentReviewResult): SavedAgentTrace {
 
 export function ClinTrialWorkspace() {
   // App States
+  const shouldReduceMotion = useReducedMotion() ?? false;
   const [items, setItems] = useState<TrialItem[]>([]);
   const [visibleItemCount, setVisibleItemCount] = useState<number>(0);
   const [resultSequenceKey, setResultSequenceKey] = useState<number>(0);
@@ -437,6 +519,12 @@ export function ClinTrialWorkspace() {
   const [evidenceExpanded, setEvidenceExpanded] = useState<boolean>(false);
   const [showGaugeTooltip, setShowGaugeTooltip] = useState<boolean>(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [invoicePreviewUrl, setInvoicePreviewUrl] = useState<string | null>(null);
+  const [scanPreviewVisible, setScanPreviewVisible] = useState<boolean>(false);
+  const [scanPreviewPhase, setScanPreviewPhase] =
+    useState<InvoiceScanPhase>('ready');
+  const [lastExtractedLineCount, setLastExtractedLineCount] =
+    useState<number>(0);
   const [agentStatus, setAgentStatus] = useState<AgentRunStatus>('idle');
   const [agentMessage, setAgentMessage] = useState<string>(
     'Upload an invoice to run backend review.',
@@ -444,14 +532,36 @@ export function ClinTrialWorkspace() {
   const [agentError, setAgentError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const revealTimersRef = useRef<number[]>([]);
+  const scanExitTimerRef = useRef<number | null>(null);
   const invoiceLineByIdRef = useRef<Map<string, InvoiceLine>>(new Map());
+  const invoiceInputRef = useRef<HTMLInputElement | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
       revealTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      if (scanExitTimerRef.current !== null) {
+        window.clearTimeout(scanExitTimerRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!selectedFile || !selectedFile.type.startsWith('image/')) {
+      setInvoicePreviewUrl(null);
+      return;
+    }
+
+    const nextPreviewUrl = URL.createObjectURL(selectedFile);
+    setInvoicePreviewUrl(nextPreviewUrl);
+
+    return () => URL.revokeObjectURL(nextPreviewUrl);
+  }, [selectedFile]);
 
   useEffect(() => {
     try {
@@ -662,10 +772,27 @@ export function ClinTrialWorkspace() {
   const isAgentRunning = agentStatus === 'running';
   const selectedFileError = selectedFile ? invoiceUploadError(selectedFile) : null;
   const canRunAgent = selectedFile !== null && selectedFileError === null && !isAgentRunning;
+  const canResetAnalysis =
+    !isAgentRunning &&
+    (
+      items.length > 0 ||
+      trail.length > 0 ||
+      agentTraceSnapshot !== null ||
+      agentStatus !== 'idle' ||
+      agentError !== null
+    );
   const agentTraceLog = agentTraceSnapshot?.entries ?? [];
   const agentTraceRunLabel = agentTraceSnapshot
     ? `${agentTraceSnapshot.runId.slice(0, 8)} · ${compactText(agentTraceSnapshot.uploadedFileName, 28)}`
     : 'No saved run';
+  const shouldShowInvoiceScanPreview = scanPreviewVisible && selectedFile !== null;
+  const emptyLineItemsMessage = shouldShowInvoiceScanPreview && isAgentRunning
+    ? 'Scanning invoice. Extracted line items will appear here.'
+    : shouldShowInvoiceScanPreview
+      ? 'Invoice staged. Run review to extract line items.'
+      : items.length === 0
+        ? 'No invoice line items yet.'
+        : 'No matching line items found.';
 
   function currentUploadedFileName(): string {
     return selectedFile?.name ?? agentTraceSnapshot?.uploadedFileName ?? 'Uploaded invoice';
@@ -674,6 +801,72 @@ export function ClinTrialWorkspace() {
   function clearItemRevealTimers(): void {
     revealTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
     revealTimersRef.current = [];
+  }
+
+  function clearScanExitTimer(): void {
+    if (scanExitTimerRef.current !== null) {
+      window.clearTimeout(scanExitTimerRef.current);
+      scanExitTimerRef.current = null;
+    }
+  }
+
+  function finishScanPreview(lineCount: number): void {
+    clearScanExitTimer();
+    setLastExtractedLineCount(lineCount);
+    setScanPreviewPhase('complete');
+  }
+
+  function releaseScanPreviewForReadyEvidence(lineId: string): void {
+    const line = invoiceLineByIdRef.current.get(lineId);
+
+    if (!line) {
+      return;
+    }
+
+    const uiLineId = displayLineId(line);
+    const selectedLineId = selectedIdRef.current;
+
+    if (selectedLineId !== null && selectedLineId !== uiLineId) {
+      return;
+    }
+
+    clearScanExitTimer();
+    setScanPreviewVisible(false);
+  }
+
+  function resetAnalysis(): void {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+    clearItemRevealTimers();
+    clearScanExitTimer();
+    invoiceLineByIdRef.current = new Map();
+
+    if (invoiceInputRef.current) {
+      invoiceInputRef.current.value = '';
+    }
+
+    setItems([]);
+    setVisibleItemCount(0);
+    setResultSequenceKey((currentKey) => currentKey + 1);
+    setSelectedId(null);
+    setDecision('');
+    setReason('');
+    setTrailExpanded(false);
+    setTrail([]);
+    setAgentTraceExpanded(false);
+    setAgentTraceSnapshot(null);
+    removeSavedAgentTrace();
+    setSearchQuery('');
+    setSelectedCategory('All');
+    setEvidenceExpanded(false);
+    setShowGaugeTooltip(false);
+    setSelectedFile(null);
+    setScanPreviewVisible(false);
+    setScanPreviewPhase('ready');
+    setLastExtractedLineCount(0);
+    setAgentStatus('idle');
+    setAgentError(null);
+    setAgentMessage('Upload an invoice to run backend review.');
   }
 
   function revealAgentItems(nextItems: TrialItem[]): void {
@@ -770,6 +963,9 @@ export function ClinTrialWorkspace() {
     const nextItems = mapAgentResultToItems(result);
     const nextTraceSnapshot = savedTraceFromAgentResult(result);
 
+    clearScanExitTimer();
+    setScanPreviewVisible(false);
+    setLastExtractedLineCount(result.extractedLines.length);
     setItems(nextItems);
     invoiceLineByIdRef.current = new Map(
       result.extractedLines.map((line) => [line.id, line]),
@@ -810,6 +1006,9 @@ export function ClinTrialWorkspace() {
     }
 
     if (event.type === 'trace_update') {
+      if (event.id === 'upload' || event.id === 'extraction') {
+        setScanPreviewPhase(event.id);
+      }
       setAgentMessage(event.headline);
       return null;
     }
@@ -824,7 +1023,10 @@ export function ClinTrialWorkspace() {
 
     if (event.type === 'extraction') {
       applyExtractedLines(event.lines);
-      setAgentMessage(`Extracted ${event.lines.length} invoice lines.`);
+      finishScanPreview(event.lines.length);
+      setAgentMessage(
+        `Extracted ${event.lines.length} invoice lines. Keeping the invoice preview visible while evidence is ranked.`,
+      );
       return null;
     }
 
@@ -846,6 +1048,9 @@ export function ClinTrialWorkspace() {
         evidence: event.evidence,
         expandEvidence: true,
       });
+      if (event.evidence.length > 0) {
+        releaseScanPreviewForReadyEvidence(event.lineId);
+      }
       setAgentMessage(`Ranked ${event.evidence.length} evidence cards for ${event.lineId}.`);
       return null;
     }
@@ -856,6 +1061,9 @@ export function ClinTrialWorkspace() {
         recommendation: event.recommendation,
         expandEvidence: true,
       });
+      if (event.recommendation.evidence.length > 0) {
+        releaseScanPreviewForReadyEvidence(event.lineId);
+      }
       setAgentMessage(`${event.lineId}: ${event.recommendation.boundary}.`);
       return null;
     }
@@ -866,6 +1074,9 @@ export function ClinTrialWorkspace() {
     }
 
     if (event.type === 'error') {
+      clearScanExitTimer();
+      setScanPreviewVisible(true);
+      setScanPreviewPhase('failed');
       setAgentStatus('failed');
       setAgentError(event.message);
       setAgentMessage(event.message);
@@ -940,21 +1151,28 @@ export function ClinTrialWorkspace() {
 
   function handleInvoiceFileChange(event: ChangeEvent<HTMLInputElement>): void {
     const file = event.target.files?.[0] ?? null;
+    clearScanExitTimer();
     setSelectedFile(file);
     setAgentError(null);
+    setLastExtractedLineCount(0);
 
     if (file) {
       const sizeError = invoiceUploadError(file);
+      setScanPreviewVisible(true);
 
       if (sizeError) {
+        setScanPreviewPhase('failed');
         setAgentStatus('failed');
         setAgentError(sizeError);
         setAgentMessage(sizeError);
       } else {
+        setScanPreviewPhase('ready');
         setAgentStatus('idle');
         setAgentMessage(`${file.name} ready for backend review.`);
       }
     } else {
+      setScanPreviewVisible(false);
+      setScanPreviewPhase('ready');
       setAgentStatus('idle');
       setAgentMessage('Upload an invoice to run backend review.');
     }
@@ -981,6 +1199,7 @@ export function ClinTrialWorkspace() {
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
     clearItemRevealTimers();
+    clearScanExitTimer();
     invoiceLineByIdRef.current = new Map();
     setItems([]);
     setSelectedId(null);
@@ -991,6 +1210,9 @@ export function ClinTrialWorkspace() {
     setDecision('');
     setReason('');
     setVisibleItemCount(0);
+    setScanPreviewVisible(true);
+    setScanPreviewPhase('upload');
+    setLastExtractedLineCount(0);
     setAgentStatus('running');
     setAgentError(null);
     setAgentMessage(`Uploading ${selectedFile.name} to backend workflow.`);
@@ -1029,6 +1251,9 @@ export function ClinTrialWorkspace() {
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
+        clearScanExitTimer();
+        setScanPreviewVisible(true);
+        setScanPreviewPhase('failed');
         setAgentStatus('failed');
         setAgentError('Backend review was canceled.');
         setAgentMessage('Backend review was canceled.');
@@ -1037,6 +1262,9 @@ export function ClinTrialWorkspace() {
 
       const message =
         error instanceof Error ? error.message : 'Agent review request failed.';
+      clearScanExitTimer();
+      setScanPreviewVisible(true);
+      setScanPreviewPhase('failed');
       setAgentStatus('failed');
       setAgentError(message);
       setAgentMessage(message);
@@ -1094,12 +1322,12 @@ export function ClinTrialWorkspace() {
       <header className="flex-none bg-white border-b border-slate-200">
         <div className="px-5 py-2.5 flex items-center justify-between gap-5">
           <div className="flex items-center gap-3">
-            {/* Custom high-contrast ClinTrial Logo */}
+            {/* Custom high-contrast ClienTrial logo */}
             <div className="w-8 h-8 rounded bg-[#0f766e] flex items-center justify-center border border-teal-900/10">
               <ShieldCheck className="w-5 h-5 text-white" />
             </div>
             <div className="flex items-baseline gap-0.5">
-              <span className="text-[19px] font-bold tracking-tight text-slate-800">Clin</span>
+              <span className="text-[19px] font-bold tracking-tight text-slate-800">Clien</span>
               <span className="text-[19px] font-bold tracking-tight text-teal-700">Trial</span>
             </div>
             <span className="hidden sm:inline-block ml-3 font-mono text-[10px] tracking-widest text-[#64748b] border-l border-slate-200 pl-3 uppercase">
@@ -1152,6 +1380,7 @@ export function ClinTrialWorkspace() {
               disabled={isAgentRunning}
               id="invoice-upload"
               onChange={handleInvoiceFileChange}
+              ref={invoiceInputRef}
               type="file"
             />
 
@@ -1166,6 +1395,21 @@ export function ClinTrialWorkspace() {
             >
               {isAgentRunning ? 'Running...' : 'Run review'}
             </button>
+
+            {canResetAnalysis && (
+              <button
+                aria-label="Reset analysis"
+                className="min-h-11 cursor-pointer whitespace-nowrap rounded border border-slate-300 bg-white px-3 text-[11px] font-bold text-slate-600 transition-all duration-150 hover:bg-slate-50 hover:text-slate-900 active:scale-95"
+                onClick={resetAnalysis}
+                title="Reset analysis"
+                type="button"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Reset analysis</span>
+                </span>
+              </button>
+            )}
 
             {isAgentRunning && (
               <button
@@ -1184,19 +1428,14 @@ export function ClinTrialWorkspace() {
         {/* Protocol Metadata Subheader */}
         <div className="px-5 py-1.5 border-t border-slate-200 flex items-center gap-2.5 flex-wrap bg-slate-50 text-xs">
           <span className="font-mono font-semibold text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded text-[11px]">
-            PRO-2024-0837
+            <span className="mr-1 font-sans font-bold text-teal-900/60">Protocol</span>
+            CTJ301UC201
           </span>
           <span className="font-semibold text-slate-700 bg-slate-200/60 px-2 py-0.5 rounded text-[11px]">
-            Phase III
+            <span className="mr-1 font-bold text-slate-500">Phase</span>
+            II
           </span>
           <span className="text-slate-500 font-medium">NeonBlanc Hospital</span>
-          <span className="text-slate-300 select-none">·</span>
-          
-          <div className="flex items-center gap-1.5 font-medium text-slate-700 bg-white border border-slate-200 rounded px-2.5 py-0.5 cursor-pointer hover:bg-slate-50 transition-all text-[11px]">
-            <span className="w-1.5 h-1.5 rounded-full bg-teal-600"></span>
-            All sites · 12
-            <ChevronDown className="w-3 h-3 text-slate-400 stroke-[2.5]" />
-          </div>
 
           <div className="ml-auto flex min-w-0 items-center gap-2">
             <span
@@ -1274,25 +1513,31 @@ export function ClinTrialWorkspace() {
           <div className="flex-1 overflow-y-auto min-h-0">
             {filteredItems.length === 0 ? (
               <div className="p-8 text-center text-xs text-slate-400 font-medium">
-                {items.length === 0
-                  ? 'No invoice line items yet.'
-                  : 'No matching line items found.'}
+                {emptyLineItemsMessage}
               </div>
             ) : (
-              visibleFilteredItems.map((item, itemIndex) => {
+              <AnimatePresence initial={false} mode="popLayout">
+                {visibleFilteredItems.map((item, itemIndex) => {
                 const meta = getStatusMeta(item.status);
                 const isSelected = item.id === selectedId;
 
                 if (!isSelected) {
                   return (
-                    <div
+                    <motion.div
                       key={item.id}
+                      animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                      exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.99 }}
+                      initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.99 }}
+                      layout={!shouldReduceMotion}
                       onClick={() => handleSelectItem(item.id)}
-                      className="line-item-enter group cursor-pointer border-b border-slate-100 transition-all duration-150 flex items-center justify-between gap-2 hover:bg-slate-100"
+                      className="group cursor-pointer border-b border-slate-100 transition-colors duration-150 flex items-center justify-between gap-2 hover:bg-slate-100"
                       style={{
                         padding: '8px 14px',
                         borderLeft: '4px solid transparent',
-                        animationDelay: staggerDelay(itemIndex),
+                      }}
+                      transition={{
+                        delay: motionStaggerDelay(itemIndex, shouldReduceMotion),
+                        duration: shouldReduceMotion ? 0.01 : 0.18,
                       }}
                       id={`sidebar-item-compact-${item.id}`}
                     >
@@ -1313,18 +1558,25 @@ export function ClinTrialWorkspace() {
                           {meta.label}
                         </span>
                       </div>
-                    </div>
+                    </motion.div>
                   );
                 }
 
                 return (
-                  <div
+                  <motion.div
                     key={item.id}
+                    animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+                    exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.99 }}
+                    initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 6, scale: 0.99 }}
+                    layout={!shouldReduceMotion}
                     onClick={() => handleSelectItem(item.id)}
-                    className="line-item-enter group cursor-pointer p-3 border-b border-slate-100 transition-all duration-150 flex flex-col gap-1 bg-white"
+                    className="group cursor-pointer p-3 border-b border-slate-100 transition-colors duration-150 flex flex-col gap-1 bg-white"
                     style={{
                       borderLeft: '4px solid #0f766e',
-                      animationDelay: staggerDelay(itemIndex),
+                    }}
+                    transition={{
+                      delay: motionStaggerDelay(itemIndex, shouldReduceMotion),
+                      duration: shouldReduceMotion ? 0.01 : 0.18,
                     }}
                     id={`sidebar-item-active-${item.id}`}
                   >
@@ -1359,9 +1611,10 @@ export function ClinTrialWorkspace() {
                         {meta.label}
                       </span>
                     </div>
-                  </div>
+                  </motion.div>
                 );
-              })
+              })}
+              </AnimatePresence>
             )}
           </div>
         </section>
@@ -1424,7 +1677,33 @@ export function ClinTrialWorkspace() {
 
           {/* Scrollable Evidence Area */}
           <div className="flex-1 overflow-y-auto min-h-0 p-5">
-            {selectedItem ? (
+            <AnimatePresence initial={false} mode="wait">
+            {shouldShowInvoiceScanPreview ? (
+              <InvoiceScanPreview
+                key="invoice-scan-preview"
+                canRunReview={canRunAgent}
+                fileName={selectedFile.name}
+                fileType={selectedFile.type}
+                lineCount={lastExtractedLineCount}
+                message={agentMessage}
+                onRunReview={() => {
+                  void startBackendReview();
+                }}
+                phase={scanPreviewPhase}
+                previewUrl={invoicePreviewUrl}
+              />
+            ) : (
+              <motion.div
+                key={selectedItem ? `workspace-${selectedItem.id}-${selectedEvidenceReady ? 'ready' : 'pending'}` : 'workspace-empty'}
+                animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
+                className="h-full"
+                exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
+                initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+                transition={{
+                  duration: shouldReduceMotion ? 0.01 : 0.18,
+                }}
+              >
+              {selectedItem ? (
               selectedEvidenceReady ? (
                 <>
             
@@ -1507,9 +1786,24 @@ export function ClinTrialWorkspace() {
                               </span>
                             </div>
 
-                            <div className="font-mono text-[11px] text-teal-700 font-semibold mb-1.5">
+                            <div
+                              className="font-mono text-[11px] text-teal-700 font-semibold mb-1.5"
+                              title={ev.locator}
+                            >
                               {ev.ref}
                             </div>
+
+                            {ev.locator && (
+                              <details className="group mb-2">
+                                <summary className="inline-flex cursor-pointer list-none items-center gap-1 font-mono text-[10px] font-semibold uppercase tracking-wider text-slate-500 transition-colors hover:text-slate-700 [&::-webkit-details-marker]:hidden">
+                                  Audit locator
+                                  <ChevronDown className="h-3 w-3 stroke-[2.5] text-slate-400 transition-transform group-open:rotate-180" />
+                                </summary>
+                                <div className="mt-1 rounded border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[10px] leading-relaxed text-slate-500 break-all">
+                                  {ev.locator}
+                                </div>
+                              </details>
+                            )}
 
                             <div className="text-[13px] text-slate-700 leading-relaxed">
                               {ev.text}
@@ -1582,6 +1876,9 @@ export function ClinTrialWorkspace() {
                 </div>
               </div>
             )}
+              </motion.div>
+            )}
+            </AnimatePresence>
           </div>
 
           {/* STICKY BOTTOM AUDITOR DECISION BAR */}

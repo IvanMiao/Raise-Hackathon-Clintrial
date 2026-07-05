@@ -1,6 +1,7 @@
 export interface EvidenceItem {
   src: 'protocol' | 'irb' | 'contract' | 'edc' | string;
   ref: string;
+  locator?: string;
   verdict: 'match' | 'warn' | 'conflict' | 'info';
   text: string;
   ai: string;

@@ -21,6 +21,7 @@ type UploadedInvoiceExtractionRequest = {
   contentType: string;
   bytes: Uint8Array;
   mode: AgentReviewMode;
+  onAttempt?: (event: VisionExtractionAttemptEvent) => void;
 };
 
 type UploadedInvoiceExtractionResult = {
@@ -28,7 +29,16 @@ type UploadedInvoiceExtractionResult = {
   provider: VisionInvoiceExtractionProvider;
   model?: string;
   detectedContentType?: SupportedImageContentType;
+  attempts: number;
   warnings: string[];
+};
+
+type VisionExtractionAttemptEvent = {
+  attempt: number;
+  maxAttempts: number;
+  status: "running" | "failed" | "succeeded";
+  message?: string;
+  willRetry?: boolean;
 };
 
 type RawInvoiceLine = {
@@ -47,7 +57,8 @@ type RawExtractionPayload = {
 
 const defaultBaseUrl = "https://api.vultrinference.com/v1";
 const defaultInvoiceExtractionModel = "Qwen/Qwen3.6-27B";
-const defaultInvoiceExtractionTimeoutMs = 60000;
+const defaultInvoiceExtractionTimeoutMs = 20000;
+const maxVisionExtractionAttempts = 3;
 const minimumReasonableConfidence = 0.35;
 
 function envValue(name: string): string | undefined {
@@ -392,12 +403,31 @@ async function extractWithVultrVision(
 
 async function extractFixtureFallback(
   warnings: string[],
+  attempts: number,
 ): Promise<UploadedInvoiceExtractionResult> {
   return {
     lines: await extractInvoiceLinesFromFixture(),
     provider: "fixture_fallback",
+    attempts,
     warnings,
   };
+}
+
+function visionExtractionErrorMessage(error: unknown): string {
+  return error instanceof InvoiceExtractionError
+    ? error.message
+    : "Vultr vision extraction failed.";
+}
+
+function shouldRetryVisionExtraction(error: unknown): boolean {
+  if (
+    error instanceof InvoiceExtractionError &&
+    error.message === "Missing VULTR_INFERENCE_KEY."
+  ) {
+    return false;
+  }
+
+  return true;
 }
 
 export async function extractInvoiceLinesFromUpload(
@@ -414,32 +444,70 @@ export async function extractInvoiceLinesFromUpload(
       "Vision extraction currently supports uploaded PNG, JPEG, WebP, and SVG images.";
 
     if (request.mode === "demo") {
-      return extractFixtureFallback([message]);
+      return extractFixtureFallback([message], 0);
     }
 
     throw new InvoiceExtractionError(message);
   }
 
-  try {
-    const result = await extractWithVultrVision(request, detectedContentType);
+  for (let attempt = 1; attempt <= maxVisionExtractionAttempts; attempt += 1) {
+    request.onAttempt?.({
+      attempt,
+      maxAttempts: maxVisionExtractionAttempts,
+      status: "running",
+    });
 
-    return {
-      lines: result.lines,
-      provider: "vultr_vision",
-      model: result.model,
-      detectedContentType,
-      warnings,
-    };
-  } catch (error) {
-    const message =
-      error instanceof InvoiceExtractionError
-        ? error.message
-        : "Vultr vision extraction failed.";
+    try {
+      const result = await extractWithVultrVision(request, detectedContentType);
 
-    if (request.mode === "demo") {
-      return extractFixtureFallback([message]);
+      request.onAttempt?.({
+        attempt,
+        maxAttempts: maxVisionExtractionAttempts,
+        status: "succeeded",
+      });
+
+      return {
+        lines: result.lines,
+        provider: "vultr_vision",
+        model: result.model,
+        detectedContentType,
+        attempts: attempt,
+        warnings,
+      };
+    } catch (error) {
+      const message = visionExtractionErrorMessage(error);
+      const willRetry =
+        attempt < maxVisionExtractionAttempts &&
+        shouldRetryVisionExtraction(error);
+
+      warnings.push(
+        `Vision extraction attempt ${attempt}/${maxVisionExtractionAttempts} failed: ${message}`,
+      );
+      request.onAttempt?.({
+        attempt,
+        maxAttempts: maxVisionExtractionAttempts,
+        status: "failed",
+        message,
+        willRetry,
+      });
+
+      if (willRetry) {
+        continue;
+      }
+
+      if (request.mode === "demo") {
+        return extractFixtureFallback(warnings, attempt);
+      }
+
+      throw new InvoiceExtractionError(message);
     }
-
-    throw new InvoiceExtractionError(message);
   }
+
+  if (request.mode === "demo") {
+    return extractFixtureFallback(warnings, maxVisionExtractionAttempts);
+  }
+
+  throw new InvoiceExtractionError(
+    warnings.at(-1) ?? "Vultr vision extraction failed.",
+  );
 }

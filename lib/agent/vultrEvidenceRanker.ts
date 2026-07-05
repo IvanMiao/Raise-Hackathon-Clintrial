@@ -42,7 +42,11 @@ type EvidenceRankerResult = {
 };
 
 const defaultBaseUrl = "https://api.vultrinference.com/v1";
-const defaultEvidenceRankerModel = "vultr/VultronRetrieverFlash-Qwen3.5-0.8B";
+const defaultEvidenceRankerModels = [
+  "vultr/VultronRetrieverPrime-Qwen3.5-8B",
+  "vultr/VultronRetrieverCore-Qwen3.5-4.5B",
+  "vultr/VultronRetrieverFlash-Qwen3.5-0.8B",
+];
 const defaultEvidenceRankerTimeoutMs = 20000;
 const maxCandidateEvidence = 14;
 const maxRankedEvidence = 8;
@@ -84,8 +88,42 @@ function createVultrClient(): OpenAI {
   });
 }
 
-function evidenceRankerModel(): string {
-  return envValue("VULTR_EVIDENCE_RANKER_MODEL") ?? defaultEvidenceRankerModel;
+function normalizeVultronModelName(model: string): string {
+  if (model.startsWith("VultronRetriever")) {
+    return `vultr/${model}`;
+  }
+
+  return model;
+}
+
+function uniqueModelNames(models: string[]): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const model of models) {
+    const normalized = normalizeVultronModelName(model.trim());
+
+    if (normalized.length === 0 || seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+    result.push(normalized);
+  }
+
+  return result;
+}
+
+function evidenceRankerModels(): string[] {
+  const configuredModels =
+    envValue("VULTR_EVIDENCE_RANKER_MODELS") ??
+    envValue("VULTR_EVIDENCE_RANKER_MODEL");
+
+  if (configuredModels) {
+    return uniqueModelNames(configuredModels.split(","));
+  }
+
+  return defaultEvidenceRankerModels;
 }
 
 function evidenceRankerTimeoutMs(): number {
@@ -544,17 +582,38 @@ export async function rankEvidenceForInvoiceLine(
     return fallbackResult(request.candidates, ["Missing Vultr inference key."]);
   }
 
-  const model = evidenceRankerModel();
+  const models = evidenceRankerModels();
+  const warnings: string[] = [];
 
-  try {
+  for (const model of models) {
     if (isVultronRetrieverModel(model)) {
-      return await rankWithVultronRetriever(request, model);
+      try {
+        const result = await rankWithVultronRetriever(request, model);
+
+        return {
+          ...result,
+          warnings: [...warnings, ...result.warnings],
+        };
+      } catch {
+        warnings.push(`${model} unavailable.`);
+        continue;
+      }
     }
 
-    return await rankWithChatModel(request, model);
-  } catch {
-    return fallbackResult(request.candidates, [
-      "Vultr evidence ranker unavailable; deterministic evidence ranking used.",
-    ]);
+    try {
+      const result = await rankWithChatModel(request, model);
+
+      return {
+        ...result,
+        warnings: [...warnings, ...result.warnings],
+      };
+    } catch {
+      warnings.push(`${model} unavailable.`);
+    }
   }
+
+  return fallbackResult(request.candidates, [
+    ...warnings,
+    "Vultr evidence ranker unavailable; deterministic evidence ranking used.",
+  ]);
 }

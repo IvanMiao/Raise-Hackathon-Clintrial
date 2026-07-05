@@ -59,6 +59,8 @@ type PendingEvidenceRanking = {
     lineIndex: number;
     evidence: EvidenceCard[];
     usedDeterministicFallback: boolean;
+    provider: string;
+    model?: string;
     warnings: string[];
   }>;
 };
@@ -340,6 +342,8 @@ export async function runReviewAgent(
 
   let extractedLines: InvoiceLine[];
   let extractionProvider = "vultr_vision";
+  let extractionAttempts = 0;
+  let extractionWarnings: string[] = [];
 
   try {
     const invoiceBytes = new Uint8Array(await input.invoiceFile.arrayBuffer());
@@ -348,10 +352,81 @@ export async function runReviewAgent(
       contentType: input.invoice.contentType,
       bytes: invoiceBytes,
       mode: input.mode,
+      onAttempt: (event) => {
+        const attemptLabel = `${event.attempt}/${event.maxAttempts}`;
+
+        if (event.status === "running") {
+          sendTraceUpdate(writer, {
+            id: "extraction",
+            status: "running",
+            title: "Invoice extraction",
+            headline: `Vision model attempt ${attemptLabel}: scanning invoice image.`,
+            detail:
+              "The workflow will try the visual extraction model up to three times before using demo fallback data.",
+            tool: "invoice_vision_extractor",
+            progress: {
+              done: Math.max(0, event.attempt - 1),
+              total: event.maxAttempts,
+              label: `attempt ${attemptLabel}`,
+            },
+          });
+          return;
+        }
+
+        if (event.status === "succeeded") {
+          sendTraceUpdate(writer, {
+            id: "extraction",
+            status: "running",
+            title: "Invoice extraction",
+            headline: `Vision model attempt ${attemptLabel} returned usable line items.`,
+            tool: "invoice_vision_extractor",
+            progress: {
+              done: event.attempt,
+              total: event.maxAttempts,
+              label: `attempt ${attemptLabel}`,
+            },
+          });
+          return;
+        }
+
+        const willContinue = event.willRetry || input.mode === "demo";
+        const detail = event.message
+          ? compactTraceText(event.message)
+          : "The visual extraction call did not return usable invoice lines.";
+        addTraceEntry({
+          phase: "extraction",
+          kind: "tool_call",
+          tool: "invoice_vision_extractor",
+          title: `Vision extraction attempt ${attemptLabel} failed`,
+          detail,
+          status: willContinue ? "running" : "failed",
+        });
+        sendTraceUpdate(writer, {
+          id: "extraction",
+          status: willContinue ? "running" : "failed",
+          title: "Invoice extraction",
+          headline: event.willRetry
+            ? `Vision model attempt ${attemptLabel} failed. Retrying extraction.`
+            : input.mode === "demo"
+              ? event.attempt >= event.maxAttempts
+                ? `Vision model attempt ${attemptLabel} failed. Using demo fallback after retries.`
+                : `Vision model attempt ${attemptLabel} failed. Using demo fallback.`
+              : `Vision model attempt ${attemptLabel} failed.`,
+          detail,
+          tool: "invoice_vision_extractor",
+          progress: {
+            done: event.attempt,
+            total: event.maxAttempts,
+            label: `attempt ${attemptLabel}`,
+          },
+        });
+      },
     });
 
     extractedLines = extraction.lines;
     extractionProvider = extraction.provider;
+    extractionAttempts = extraction.attempts;
+    extractionWarnings = extraction.warnings;
 
     if (extraction.provider === "fixture_fallback") {
       writer.send({
@@ -410,7 +485,17 @@ export async function runReviewAgent(
       extractionProvider === "fixture_fallback"
         ? "Fixture extraction used"
         : "Invoice vision extraction completed",
-    detail: `Extracted ${extractedLines.length} invoice lines with patient, visit, description, and amount fields.`,
+    detail: [
+      `Extracted ${extractedLines.length} invoice lines with patient, visit, description, and amount fields.`,
+      extractionAttempts > 1
+        ? `Vision extraction used ${extractionAttempts} attempts.`
+        : undefined,
+      extractionWarnings.length > 0
+        ? `Warnings: ${extractionWarnings.map((warning) => compactTraceText(warning, 120)).join(" ")}`
+        : undefined,
+    ]
+      .filter((value): value is string => Boolean(value))
+      .join(" "),
     status: "done",
   });
   sendTraceUpdate(writer, {
@@ -420,7 +505,11 @@ export async function runReviewAgent(
     headline: `Extracted ${extractedLines.length} invoice lines with patient, visit, description, and amount fields.`,
     detail:
       extractionProvider === "fixture_fallback"
-        ? "Vision extraction was unavailable. Demo fixture extraction was used for this run."
+        ? extractionAttempts > 0
+          ? `Vision extraction did not return usable lines after ${extractionAttempts} attempt${extractionAttempts === 1 ? "" : "s"}. Demo fixture extraction was used for this run.`
+          : "Vision extraction was unavailable for this file type. Demo fixture extraction was used for this run."
+        : extractionAttempts > 1
+          ? `Vision extraction succeeded on attempt ${extractionAttempts}.`
         : undefined,
     tool: "invoice_vision_extractor",
     progress: {
@@ -782,6 +871,8 @@ export async function runReviewAgent(
           lineIndex,
           evidence: result.evidence,
           usedDeterministicFallback: result.usedDeterministicFallback,
+          provider: result.provider,
+          model: result.model,
           warnings: result.warnings,
         })),
       };
@@ -806,7 +897,7 @@ export async function runReviewAgent(
     pendingEvidence = pendingEvidence.filter(
       (pendingSearch) => pendingSearch !== settledEvidence.pendingSearch,
     );
-    const { line, lineIndex, evidence, usedDeterministicFallback } =
+    const { line, lineIndex, evidence, usedDeterministicFallback, provider, model } =
       settledEvidence.value;
 
     evidenceByLineId[line.id] = evidence;
@@ -832,7 +923,9 @@ export async function runReviewAgent(
       tool: "evidence_ranker",
       lineId: line.id,
       title: `${lineLabel(line)} evidence ranked`,
-      detail: evidenceStatusSummary(evidence),
+      detail: `${evidenceStatusSummary(evidence)} Provider: ${provider}${
+        model ? ` (${model})` : ""
+      }.`,
       status: "done",
     });
     for (const evidenceCard of evidence) {

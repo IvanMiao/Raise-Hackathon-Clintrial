@@ -36,6 +36,8 @@ export type EvidenceSearchToolResult = {
 export type EvidenceRankToolResult = {
   evidence: EvidenceCard[];
   usedDeterministicFallback: boolean;
+  provider: string;
+  model?: string;
   warnings: string[];
 };
 
@@ -202,6 +204,8 @@ export async function callEvidenceRankerTool(input: {
   return {
     evidence: ranking.evidence,
     usedDeterministicFallback: ranking.provider === "deterministic_fallback",
+    provider: ranking.provider,
+    model: ranking.model,
     warnings: ranking.warnings,
   };
 }
