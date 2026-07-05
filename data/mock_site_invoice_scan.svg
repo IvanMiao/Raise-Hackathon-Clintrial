@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600" role="img" aria-labelledby="title desc">
   <title id="title">Mock clinical trial site invoice scan</title>
-  <desc id="desc">Synthetic invoice image for TrialGuard demo extraction.</desc>
+  <desc id="desc">Synthetic invoice image for ClinTrial demo extraction.</desc>
   <rect width="1200" height="1600" fill="#f7f7f4"/>
   <rect x="70" y="58" width="1060" height="1480" rx="10" fill="#ffffff" stroke="#d7d7d1" stroke-width="3"/>
   <g opacity="0.13">
@@ -72,7 +72,7 @@
 
   <rect x="104" y="1210" width="992" height="160" fill="#fafafa" stroke="#dadad5"/>
   <text x="132" y="1252" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#4b5563">This file is synthetic demo data. It simulates an uploaded invoice image/PDF.</text>
-  <text x="132" y="1286" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#4b5563">TrialGuard should not approve payment from this invoice. It should extract line items, retrieve evidence,</text>
+  <text x="132" y="1286" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#4b5563">ClinTrial should not approve payment from this invoice. It should extract line items, retrieve evidence,</text>
   <text x="132" y="1320" font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#4b5563">classify automation boundaries, and produce a reviewer-facing audit trail.</text>
 
   <g opacity="0.18">

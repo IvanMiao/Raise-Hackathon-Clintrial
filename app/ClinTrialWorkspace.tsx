@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ChangeEvent } from 'react';
+import type { ChangeEvent, DragEvent } from 'react';
 import { 
   AlertTriangle, 
   Lock, 
@@ -18,9 +18,9 @@ import {
   Activity,
   FlaskConical,
   Eye,
-  SlidersHorizontal,
   Bookmark,
   Clock,
+  FileUp,
   RotateCcw
 } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
@@ -28,6 +28,7 @@ import {
   InvoiceScanPreview,
   type InvoiceScanPhase,
 } from './InvoiceScanPreview';
+import { INITIAL_ITEMS, INITIAL_TRAIL } from './trialData';
 import type { AuditTrailEntry, EvidenceItem, TrialItem } from './trialTypes';
 import type {
   AgentEvent,
@@ -81,6 +82,40 @@ type AgentLineItemInput = {
   includeExtractionEvidenceFallback?: boolean;
 };
 
+type SeverityColor = 'red' | 'amber' | 'teal';
+
+const severityClasses: Record<SeverityColor, {
+  background: string;
+  border: string;
+  borderLeft: string;
+  text: string;
+}> = {
+  red: {
+    background: 'bg-red-700',
+    border: 'border-red-700',
+    borderLeft: 'border-l-red-700',
+    text: 'text-red-700',
+  },
+  amber: {
+    background: 'bg-amber-500',
+    border: 'border-amber-500',
+    borderLeft: 'border-l-amber-500',
+    text: 'text-amber-600',
+  },
+  teal: {
+    background: 'bg-teal-700',
+    border: 'border-teal-700',
+    borderLeft: 'border-l-teal-700',
+    text: 'text-teal-700',
+  },
+};
+
+function getSeverityColor(score: number): SeverityColor {
+  if (score < 40) return 'red';
+  if (score < 85) return 'amber';
+  return 'teal';
+}
+
 const agentReviewMode: AgentReviewMode = 'demo';
 const acceptedInvoiceFileTypes = [
   'image/svg+xml',
@@ -95,8 +130,8 @@ const maxPdfUploadSizeBytes = 10 * 1024 * 1024;
 const agentStatusStyles: Record<AgentRunStatus, string> = {
   idle: 'text-slate-600 bg-slate-100 border-slate-200',
   running: 'text-blue-700 bg-blue-50 border-blue-200',
-  done: 'text-teal-700 bg-teal-50 border-teal-200',
-  failed: 'text-rose-600 bg-rose-50 border-rose-200',
+  done: 'text-emerald-700 bg-emerald-50 border-slate-200',
+  failed: 'text-slate-700 bg-white border-slate-200',
 };
 
 const evidenceVerdictPriority: Record<EvidenceItem['verdict'], number> = {
@@ -154,7 +189,7 @@ const traceStatusStyles: Record<NonNullable<AgentTraceEntry['status']>, string> 
   queued: 'bg-slate-100 text-slate-500',
   running: 'bg-blue-50 text-blue-700',
   done: 'bg-teal-50 text-teal-700',
-  failed: 'bg-rose-50 text-rose-600',
+  failed: 'bg-white text-slate-700 border border-slate-200',
 };
 
 const liveTracePhaseOrder: AgentTracePhase[] = [
@@ -179,9 +214,9 @@ const liveTracePhaseLabels: Record<AgentTracePhase, string> = {
 
 const liveTraceStatusLabels: Record<AgentTraceStatus, string> = {
   queued: 'Queued',
-  running: 'Running',
-  done: 'Complete',
-  failed: 'Stopped',
+  running: 'In progress',
+  done: 'Verified',
+  failed: 'Paused',
 };
 
 const vultrServerlessInferenceLabel = 'Vultr Serverless Inference';
@@ -224,12 +259,12 @@ function tracePhaseLabel(phase: AgentTraceEntry['phase']): string {
 }
 
 function traceToolLabel(tool: AgentTraceEntry['tool']): string {
-  return tool ? tool.replace(/_/g, ' ') : 'backend workflow';
+  return tool ? tool.replace(/_/g, ' ') : 'review workflow';
 }
 
 function liveTraceVultrModelLabel(step: LiveAgentStep): string | null {
   if (step.id === 'extraction' || step.tool === 'invoice_vision_extractor') {
-    return 'Vultr vision model';
+    return 'Document intelligence';
   }
 
   if (
@@ -238,7 +273,7 @@ function liveTraceVultrModelLabel(step: LiveAgentStep): string | null {
     step.tool === 'retrieval_planner' ||
     step.tool === 'evidence_ranker'
   ) {
-    return 'Vultr retrieval model';
+    return 'Evidence intelligence';
   }
 
   return null;
@@ -288,7 +323,7 @@ function LiveAgentTracePanel({
         {
           id: 'upload',
           status: agentStatus === 'failed' ? 'failed' : 'running',
-          title: 'Preparing backend workflow',
+          title: 'Preparing review workflow',
           headline: agentMessage,
           updatedAt: '',
         },
@@ -302,14 +337,16 @@ function LiveAgentTracePanel({
   const activeStepId = activeStep?.id ?? null;
   const panelTone = agentStatus === 'failed'
     ? {
-        frame: 'border-rose-200 bg-rose-50/40',
-        badge: 'border-rose-200 bg-rose-50 text-rose-600',
-        icon: 'text-rose-600',
+        frame: 'border-red-700 bg-white',
+        badge: 'border-slate-200 bg-white text-slate-700',
+        icon: 'text-red-700',
+        dot: 'bg-red-600',
       }
     : {
         frame: 'border-blue-100 bg-blue-50/50',
-        badge: 'border-blue-200 bg-blue-50 text-blue-700',
+        badge: 'border-slate-200 bg-white text-slate-700',
         icon: 'text-blue-600',
+        dot: 'bg-slate-400',
       };
 
   useEffect(() => {
@@ -347,7 +384,7 @@ function LiveAgentTracePanel({
                 }`}
               />
               <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-slate-600">
-                {agentStatus === 'failed' ? 'Agent stopped' : 'Agent is working'}
+                {agentStatus === 'failed' ? 'Analysis paused' : 'Analysis in progress'}
               </span>
             </div>
             <div className="mt-1 text-[13px] font-bold leading-snug text-slate-800">
@@ -355,7 +392,7 @@ function LiveAgentTracePanel({
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <span className="rounded border border-teal-200 bg-white/75 px-1.5 py-0.5 font-mono text-[8.5px] font-semibold text-teal-700">
-                Powered by {vultrServerlessInferenceLabel}
+                Intelligence by {vultrServerlessInferenceLabel}
               </span>
               {activeVultrModelLabel && (
                 <span className="rounded border border-teal-200 bg-teal-50 px-1.5 py-0.5 font-mono text-[8.5px] font-bold text-teal-700">
@@ -367,7 +404,8 @@ function LiveAgentTracePanel({
           <span
             className={`flex-none rounded border px-2 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wider ${panelTone.badge}`}
           >
-            {agentStatus === 'failed' ? 'Stopped' : 'Live'}
+            <span className={`w-1.5 h-1.5 rounded-full ${panelTone.dot} mr-1.5 inline-block`} />
+            {agentStatus === 'failed' ? 'Paused' : 'Active'}
           </span>
         </div>
       </div>
@@ -384,17 +422,17 @@ function LiveAgentTracePanel({
             const rowTone = isRunningStep
               ? 'border-blue-200 bg-white shadow-sm ring-1 ring-blue-100'
               : isFailedStep
-                ? 'border-rose-200 bg-white'
+                ? 'border-red-700 bg-white'
                 : 'border-slate-200 bg-white/80';
             const iconTone = isRunningStep
               ? 'border-blue-200 bg-blue-50 text-blue-700'
               : isFailedStep
-                ? 'border-rose-200 bg-rose-50 text-rose-600'
+                ? 'border-red-700 bg-white text-red-700'
                 : 'border-slate-200 bg-slate-50 text-slate-400';
             const textTone = isRunningStep
               ? 'text-slate-900'
               : isFailedStep
-                ? 'text-rose-700'
+                ? 'text-red-700'
                 : 'text-slate-500';
 
             return (
@@ -440,14 +478,9 @@ function LiveAgentTracePanel({
                         {step.title}
                       </span>
                       <span
-                        className={`rounded px-1.5 py-0.5 font-mono text-[8.5px] font-bold uppercase ${
-                          isRunningStep
-                            ? 'bg-blue-50 text-blue-700'
-                            : isFailedStep
-                              ? 'bg-rose-50 text-rose-600'
-                              : 'bg-slate-100 text-slate-400'
-                        }`}
+                        className="rounded border border-slate-200 bg-white px-1.5 py-0.5 font-mono text-[8.5px] font-bold uppercase text-slate-700"
                       >
+                        <span className={`w-1.5 h-1.5 rounded-full ${isFailedStep ? 'bg-red-600' : isDoneStep ? 'bg-emerald-600' : 'bg-slate-400'} mr-1.5 inline-block`} />
                         {liveTraceStatusLabels[step.status]}
                       </span>
                     </div>
@@ -491,7 +524,7 @@ function LiveAgentTracePanel({
                             animate={{ scaleX: ratio }}
                             className={`h-full origin-left rounded ${
                               isFailedStep
-                                ? 'bg-rose-500'
+                                ? 'bg-red-700'
                                 : isDoneStep
                                   ? 'bg-slate-300'
                                   : 'bg-blue-500'
@@ -580,7 +613,7 @@ function normalizeErrorPayload(payload: unknown): string {
     return payload.error;
   }
 
-  return 'Agent review request failed.';
+  return 'Review could not be completed.';
 }
 
 function yieldToBrowser(): Promise<void> {
@@ -676,7 +709,7 @@ function evidenceReference(evidence: EvidenceCard): string {
   ].filter((value): value is string => Boolean(value));
 
   if (context.length > 0) {
-    const label = evidence.status === 'missing' ? 'No matching row for' : 'Search';
+    const label = evidence.status === 'missing' ? 'No supporting record for' : 'Evidence query';
     return `${sourceTitle} · ${label} ${context.join(' / ')}`;
   }
 
@@ -740,7 +773,7 @@ function recommendationStatus(recommendation: BoundaryRecommendation | undefined
 }
 
 function recommendationBand(status: TrialItem['status'], score: number) {
-  if (status === 'pass' && score >= 85) {
+  if (status === 'pass' && getSeverityColor(score) === 'teal') {
     return 'clear';
   }
 
@@ -804,13 +837,13 @@ function mapInvoiceLineToTrialItem(
       input.recommendation?.decisionReason ??
       (mappedEvidence.length > 0
         ? 'Evidence sources are being ranked while boundary evaluation continues.'
-        : 'Invoice line extracted. Agent is searching evidence sources.'),
+        : 'Invoice line identified. Evidence retrieval in progress.'),
     gcpRules:
       riskFlags.length > 0
         ? riskFlags
         : mappedEvidence.length > 0
-          ? ['Evidence search in progress', 'Boundary pending']
-          : ['Invoice extraction complete', 'Evidence search pending'],
+          ? ['Evidence retrieval in progress', 'Boundary pending']
+          : ['Invoice line identified', 'Evidence retrieval pending'],
     rec: input.recommendation
       ? `${boundaryLabels[input.recommendation.boundary]} — ${input.recommendation.decisionReason}`
       : 'Awaiting deterministic boundary evaluation.',
@@ -839,12 +872,12 @@ function auditEntryFromAgentResult(result: AgentReviewResult): AuditTrailEntry {
 
   return {
     time: `${dateLabel} UTC`,
-    auditor: 'System · Backend Agent',
+    auditor: 'WiseGate · Review Service',
     item: result.runId.slice(0, 8),
     action: 'Reviewed',
     actionColor: '#0f766e',
     actionBg: '#f0fdfa',
-    justification: `Read-only backend workflow completed for ${result.uploadedInvoice.fileName}; ${result.extractedLines.length} line items mapped into the workspace.`,
+    justification: `Read-only review completed for ${result.uploadedInvoice.fileName}; ${result.extractedLines.length} line items mapped into the workspace.`,
   };
 }
 
@@ -886,7 +919,7 @@ export function ClinTrialWorkspace() {
     useState<number>(0);
   const [agentStatus, setAgentStatus] = useState<AgentRunStatus>('idle');
   const [agentMessage, setAgentMessage] = useState<string>(
-    'Upload an invoice to run backend review.',
+    'Upload an invoice to begin review.',
   );
   const [agentError, setAgentError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -983,11 +1016,11 @@ export function ClinTrialWorkspace() {
   // Handle status meta formatting
   const getStatusMeta = (status: string) => {
     const m: Record<string, { label: string; color: string; bg: string; dot: string; border: string }> = {
-      pass: { label: 'Cleared', color: '#0f766e', bg: '#f0fdfa', dot: '#0d9488', border: '#99f6e4' },
-      flag: { label: 'At risk', color: '#e11d48', bg: '#fff1f2', dot: '#e11d48', border: '#fecdd3' },
-      block: { label: 'Blocked', color: '#e11d48', bg: '#fff1f2', dot: '#e11d48', border: '#fecdd3' },
-      review: { label: 'Review', color: '#b45309', bg: '#fffbeb', dot: '#d97706', border: '#fde68a' },
-      pending: { label: 'Pending', color: '#475569', bg: '#f1f5f9', dot: '#64748b', border: '#cbd5e1' },
+      pass: { label: 'Cleared', color: '#334155', bg: '#ffffff', dot: '#059669', border: '#e2e8f0' },
+      flag: { label: 'At risk', color: '#334155', bg: '#ffffff', dot: '#dc2626', border: '#e2e8f0' },
+      block: { label: 'Blocked', color: '#334155', bg: '#ffffff', dot: '#dc2626', border: '#e2e8f0' },
+      review: { label: 'Review', color: '#334155', bg: '#ffffff', dot: '#d97706', border: '#e2e8f0' },
+      pending: { label: 'Pending', color: '#334155', bg: '#ffffff', dot: '#94a3b8', border: '#e2e8f0' },
     };
     return m[status] || m.pending;
   };
@@ -996,8 +1029,8 @@ export function ClinTrialWorkspace() {
   const getBandMeta = (band: string) => {
     const m: Record<string, { label: string; bg: string; border: string; accent: string }> = {
       clear: { label: 'Within auto-clear boundary', bg: '#f0fdfa', border: '#99f6e4', accent: '#0f766e' },
-      review: { label: 'Auditor review required', bg: '#fff1f2', border: '#fecdd3', accent: '#e11d48' },
-      hold: { label: 'Recommend hold — high risk', bg: '#fff1f2', border: '#fecdd3', accent: '#e11d48' },
+      review: { label: 'Auditor review required', bg: '#ffffff', border: '#e2e8f0', accent: '#b91c1c' },
+      hold: { label: 'Recommend hold — high risk', bg: '#ffffff', border: '#e2e8f0', accent: '#b91c1c' },
     };
     return m[band] || m.review;
   };
@@ -1024,7 +1057,7 @@ export function ClinTrialWorkspace() {
     const m: Record<string, { label: string; color: string; bg: string; border: string }> = {
       match: { label: 'Match', color: '#0f766e', bg: '#f0fdfa', border: '#cbd5e1' },
       warn: { label: 'Caution', color: '#b45309', bg: '#fffbeb', border: '#fde68a' },
-      conflict: { label: 'Conflict', color: '#e11d48', bg: '#fff1f2', border: '#fecdd3' },
+      conflict: { label: 'Conflict', color: '#b91c1c', bg: '#ffffff', border: '#e2e8f0' },
       info: { label: 'Info', color: '#475569', bg: '#f1f5f9', border: '#cbd5e1' },
     };
     return m[v] || m.info;
@@ -1057,7 +1090,7 @@ export function ClinTrialWorkspace() {
     const map: Record<string, [string, string, string]> = {
       approve: ['Approved', '#0f766e', '#f0fdfa'],
       partial: ['Partial approval', '#b45309', '#fffbeb'],
-      reject: ['Rejected', '#e11d48', '#fff1f2'],
+      reject: ['Rejected', '#b91c1c', '#ffffff'],
       escalate: ['Escalated', '#475569', '#f1f5f9'],
     };
 
@@ -1105,6 +1138,11 @@ export function ClinTrialWorkspace() {
   // Navigation Items
   const selMeta = selectedItem ? getStatusMeta(selectedItem.status) : getStatusMeta('pending');
   const selBand = selectedItem ? getBandMeta(selectedItem.band) : getBandMeta('review');
+  const score = selectedItem?.complianceScore ?? 0;
+  const severityColor = getSeverityColor(score);
+  const severity = severityClasses[severityColor];
+  const decisionState: 'hold' | 'review' | 'safe' =
+    severityColor === 'red' ? 'hold' : severityColor === 'amber' ? 'review' : 'safe';
   const selectedEvidenceReady = prioritizedEvidence.length > 0;
   const selectedBoundaryReady = selectedItem !== null && selectedItem.status !== 'pending';
   const shouldShowLiveAgentTrace =
@@ -1115,49 +1153,45 @@ export function ClinTrialWorkspace() {
     selectedBoundaryReady && selectedItem !== null && !shouldShowLiveAgentTrace;
   const evidenceHeroTone = !selectedBoundaryReady
     ? {
-        card: 'bg-blue-50/40 border-blue-100 border-l-blue-500',
-        badge: 'bg-blue-600',
-        text: 'text-blue-700',
-        label: 'Evidence ranking in progress',
+        card: 'bg-white border-slate-200 border-l-slate-400',
+        dot: 'bg-slate-400',
+        text: 'text-slate-700',
+        label: 'Evidence assessment in progress',
       }
-    : selectedItem && selectedItem.complianceScore < 85
-      ? {
-          card: 'bg-rose-50/40 border-rose-200 border-l-rose-600',
-          badge: 'bg-rose-600',
-          text: 'text-rose-600',
-          label: selBand.label,
-        }
-      : {
-          card: 'bg-teal-50/40 border-teal-200 border-l-teal-600',
-          badge: 'bg-teal-700',
-          text: 'text-teal-700',
-          label: selBand.label,
-        };
+    : {
+        card: `bg-white border-slate-200 ${severity.borderLeft}`,
+        dot: severity.background,
+        text: severity.text,
+        label: selBand.label,
+      };
   const agentStatusStyle = agentStatusStyles[agentStatus];
   const isAgentRunning = agentStatus === 'running';
+  const hasUploadedFile = selectedFile !== null;
   const selectedFileError = selectedFile ? invoiceUploadError(selectedFile) : null;
   const canRunAgent = selectedFile !== null && selectedFileError === null && !isAgentRunning;
-  const canResetAnalysis =
-    !isAgentRunning &&
-    (
-      items.length > 0 ||
-      trail.length > 0 ||
-      agentTraceSnapshot !== null ||
-      agentStatus !== 'idle' ||
-      agentError !== null
-    );
+  const headerStatusText = isAgentRunning
+    ? 'Analysis in progress'
+    : agentStatus === 'done'
+      ? 'Analysis complete'
+      : agentStatus === 'failed'
+        ? 'Analysis requires attention'
+        : items.length === 0
+          ? 'No invoice items'
+          : riskCount > 0
+            ? `${riskCount} items need decision`
+            : 'All items cleared';
   const agentTraceLog = agentTraceSnapshot?.entries ?? [];
   const agentTraceRunLabel = agentTraceSnapshot
     ? `${agentTraceSnapshot.runId.slice(0, 8)} · ${compactText(agentTraceSnapshot.uploadedFileName, 28)}`
-    : 'No saved run';
+    : 'No prior review';
   const shouldShowInvoiceScanPreview = scanPreviewVisible && selectedFile !== null;
   const emptyLineItemsMessage = shouldShowInvoiceScanPreview && isAgentRunning
-    ? 'Scanning invoice. Extracted line items will appear here.'
+    ? 'Scanning invoice. Identified line items will appear here.'
     : shouldShowInvoiceScanPreview
       ? 'Invoice staged. Run review to extract line items.'
       : items.length === 0
-        ? 'No invoice line items yet.'
-        : 'No matching line items found.';
+        ? 'No invoice items available.'
+        : 'No items match the current filters.';
 
   function currentUploadedFileName(): string {
     return selectedFile?.name ?? agentTraceSnapshot?.uploadedFileName ?? 'Uploaded invoice';
@@ -1232,7 +1266,15 @@ export function ClinTrialWorkspace() {
     setLastExtractedLineCount(0);
     setAgentStatus('idle');
     setAgentError(null);
-    setAgentMessage('Upload an invoice to run backend review.');
+    setAgentMessage('Upload an invoice to begin review.');
+  }
+
+  function handleResetWorkspace(): void {
+    resetAnalysis();
+  }
+
+  function handleChangeFile(): void {
+    handleResetWorkspace();
   }
 
   function revealAgentItems(nextItems: TrialItem[]): void {
@@ -1361,13 +1403,13 @@ export function ClinTrialWorkspace() {
     setAgentStatus('done');
     setAgentError(null);
     setAgentMessage(
-      `Backend workflow completed · ${result.extractedLines.length} lines mapped`,
+      `Analysis complete · ${result.extractedLines.length} lines assessed`,
     );
   }
 
   function handleAgentEvent(event: AgentEvent): AgentReviewResult | null {
     if (event.type === 'started') {
-      setAgentMessage(`Backend workflow started · ${event.runId.slice(0, 8)}`);
+      setAgentMessage(`Review initiated · ${event.runId.slice(0, 8)}`);
       return null;
     }
 
@@ -1392,7 +1434,7 @@ export function ClinTrialWorkspace() {
 
     if (event.type === 'step') {
       if (event.status === 'running') {
-        setAgentMessage(`Agent is running: ${event.label}.`);
+        setAgentMessage(`Review in progress: ${event.label}.`);
       }
 
       return null;
@@ -1402,7 +1444,7 @@ export function ClinTrialWorkspace() {
       applyExtractedLines(event.lines);
       finishScanPreview(event.lines.length);
       setAgentMessage(
-        `Extracted ${event.lines.length} invoice lines. Keeping the invoice preview visible while evidence is ranked.`,
+        `Identified ${event.lines.length} invoice lines. Evidence assessment is in progress.`,
       );
       return null;
     }
@@ -1411,12 +1453,12 @@ export function ClinTrialWorkspace() {
       updateAgentLineItem(event.lineId, {
         candidateCode: event.plan.candidateItemCodes[0] ?? 'Agent extracted',
       });
-      setAgentMessage(`Retrieval plan ready for ${event.lineId}.`);
+      setAgentMessage(`Evidence scope established for ${event.lineId}.`);
       return null;
     }
 
     if (event.type === 'search') {
-      setAgentMessage(`Searching ${event.sources.length} sources for ${event.lineId}.`);
+      setAgentMessage(`Retrieving evidence from ${event.sources.length} sources for ${event.lineId}.`);
       return null;
     }
 
@@ -1470,7 +1512,7 @@ export function ClinTrialWorkspace() {
 
   async function readAgentStream(response: Response): Promise<AgentStreamReadResult> {
     if (!response.body) {
-      throw new Error('Agent review stream was empty.');
+      throw new Error('Review returned no assessment data.');
     }
 
     const reader = response.body.getReader();
@@ -1546,21 +1588,39 @@ export function ClinTrialWorkspace() {
       } else {
         setScanPreviewPhase('ready');
         setAgentStatus('idle');
-        setAgentMessage(`${file.name} ready for backend review.`);
+        setAgentMessage(`${file.name} ready for review.`);
       }
     } else {
       setScanPreviewVisible(false);
       setScanPreviewPhase('ready');
       setAgentStatus('idle');
-      setAgentMessage('Upload an invoice to run backend review.');
+      setAgentMessage('Upload an invoice to begin review.');
     }
+  }
+
+  function handleLoadSampleInvoice(): void {
+    const sampleFile = new File(['ClinTrial sample invoice'], 'PRO-2024-0837-sample.pdf', {
+      type: 'application/pdf',
+    });
+    setSelectedFile(sampleFile);
+    setItems(INITIAL_ITEMS);
+    setTrail(INITIAL_TRAIL);
+    setVisibleItemCount(INITIAL_ITEMS.length);
+    setSelectedId(INITIAL_ITEMS.find((item) => item.id === 'LI-0455')?.id ?? INITIAL_ITEMS[0]?.id ?? null);
+    setScanPreviewVisible(false);
+    setScanPreviewPhase('complete');
+    setAgentStatus('done');
+    setAgentError(null);
+    setAgentMessage('Sample invoice assessment ready.');
+    setLiveAgentSteps([]);
+    setResultSequenceKey((currentKey) => currentKey + 1);
   }
 
   async function startBackendReview(): Promise<void> {
     if (!selectedFile) {
       setAgentStatus('failed');
-      setAgentError('Choose an invoice file before running review.');
-      setAgentMessage('Choose an invoice file before running review.');
+      setAgentError('Select an invoice before beginning review.');
+      setAgentMessage('Select an invoice before beginning review.');
       return;
     }
 
@@ -1594,7 +1654,7 @@ export function ClinTrialWorkspace() {
     setLastExtractedLineCount(0);
     setAgentStatus('running');
     setAgentError(null);
-    setAgentMessage(`Uploading ${selectedFile.name} to backend workflow.`);
+    setAgentMessage(`Preparing ${selectedFile.name} for review.`);
 
     const formData = new FormData();
     formData.append('invoice', selectedFile);
@@ -1626,7 +1686,7 @@ export function ClinTrialWorkspace() {
       }
 
       if (!streamResult.result) {
-        throw new Error('Backend workflow ended without a completion event.');
+        throw new Error('Review ended before results were finalized.');
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') {
@@ -1634,13 +1694,13 @@ export function ClinTrialWorkspace() {
         setScanPreviewVisible(true);
         setScanPreviewPhase('failed');
         setAgentStatus('failed');
-        setAgentError('Backend review was canceled.');
-        setAgentMessage('Backend review was canceled.');
+        setAgentError('Review was canceled.');
+        setAgentMessage('Review was canceled.');
         return;
       }
 
       const message =
-        error instanceof Error ? error.message : 'Agent review request failed.';
+        error instanceof Error ? error.message : 'Review could not be completed.';
       clearScanExitTimer();
       setScanPreviewVisible(true);
       setScanPreviewPhase('failed');
@@ -1661,33 +1721,28 @@ export function ClinTrialWorkspace() {
   // Dynamic values for decision option buttons
   const getDecisionOptionStyle = (v: string, label: string) => {
     const on = decision === v;
-    
-    if (v === 'reject') {
-      return (
-        <button
-          key={v}
-          onClick={() => setDecision(v)}
-          className={`cursor-pointer font-sans text-[12.5px] px-4 py-1.5 rounded transition-all duration-150 active:scale-95 border ${
-            on 
-              ? 'bg-rose-600 text-white border-transparent font-bold shadow-sm ring-2 ring-rose-500 ring-offset-1' 
-              : 'bg-rose-600 text-white border-transparent shadow-sm font-semibold hover:bg-rose-700'
-          }`}
-        >
-          {label}
-        </button>
-      );
-    }
+    const isApprove = v === 'approve';
+    const isReject = v === 'reject';
+    const isEscalate = v === 'escalate';
+    const stateStyle = isApprove
+      ? (decisionState === 'safe'
+          ? 'bg-teal-700 text-white border-teal-700 hover:bg-teal-800'
+          : 'bg-white text-slate-500 border-slate-300 hover:bg-slate-50')
+      : isReject
+        ? 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+        : isEscalate
+          ? (decisionState === 'review'
+              ? 'bg-slate-800 text-white border-slate-800 hover:bg-slate-900'
+              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50')
+          : on
+            ? 'bg-slate-800 text-white border-slate-800'
+            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50';
 
-    // Approve, Partial, Escalate
     return (
       <button
         key={v}
         onClick={() => setDecision(v)}
-        className={`cursor-pointer font-sans text-[12.5px] px-4 py-1.5 rounded transition-all duration-150 active:scale-95 border ${
-          on 
-            ? 'bg-slate-800 text-white border-slate-800 font-bold shadow-sm' 
-            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50 font-medium'
-        }`}
+        className={`cursor-pointer font-sans text-[12.5px] px-4 py-1.5 ${isReject ? 'rounded-md' : 'rounded'} transition-all duration-150 active:scale-95 border ${stateStyle} ${on ? 'font-bold ring-2 ring-slate-300 ring-offset-1' : 'font-medium'}`}
       >
         {label}
       </button>
@@ -1734,9 +1789,9 @@ export function ClinTrialWorkspace() {
             <span className="hidden sm:inline-block ml-3 font-mono text-[10px] tracking-widest text-[#64748b] border-l border-slate-200 pl-3 uppercase">
               Workspace
             </span>
-            <span className="hidden min-w-0 max-w-[270px] items-center gap-1.5 truncate rounded border border-teal-200 bg-teal-50 px-2 py-1 font-mono text-[10px] font-semibold text-teal-700 xl:inline-flex">
+            <span className="hidden min-w-0 max-w-[270px] items-center gap-1.5 truncate rounded border border-slate-200 bg-emerald-50 px-2 py-1 font-mono text-[10px] font-semibold text-emerald-700 xl:inline-flex">
               <Activity className="h-3 w-3 flex-none" aria-hidden="true" />
-              <span className="truncate">Powered by {vultrServerlessInferenceLabel}</span>
+              <span className="truncate">Intelligence by {vultrServerlessInferenceLabel}</span>
             </span>
           </div>
           
@@ -1747,38 +1802,41 @@ export function ClinTrialWorkspace() {
               void startBackendReview();
             }}
           >
+            {hasUploadedFile && (
             <div className={`hidden lg:flex items-center gap-2 font-mono text-[11px] px-3 py-2 border transition-all duration-200 rounded ${agentStatusStyle}`}>
+              <AnimatePresence initial={false} mode="wait">
+              <motion.span
+                animate={{ opacity: 1 }}
+                className="transition-opacity duration-300 ease-in-out"
+                exit={{ opacity: 0 }}
+                initial={{ opacity: 0 }}
+                key={`header-icon-${agentStatus}`}
+                transition={{ duration: 0.25 }}
+              >
               {agentStatus === 'failed' ? (
                 <AlertCircle className="w-3.5 h-3.5" />
               ) : agentStatus === 'done' ? (
                 <CheckCircle2 className="w-3.5 h-3.5" />
               ) : (
-                <span className={`w-2 h-2 rounded-full ${isAgentRunning ? 'animate-pulse bg-blue-500' : items.length === 0 ? 'bg-slate-400' : riskCount > 0 ? 'bg-rose-500' : 'bg-teal-600'}`}></span>
+                <span className={`w-2 h-2 rounded-full ${isAgentRunning ? 'animate-pulse bg-blue-500' : items.length === 0 ? 'bg-slate-400' : riskCount > 0 ? 'bg-red-700' : 'bg-teal-600'}`}></span>
               )}
-              {isAgentRunning
-                ? 'Backend running'
-                : agentStatus === 'done'
-                  ? 'Backend complete'
-                  : agentStatus === 'failed'
-                    ? 'Backend issue'
-                    : items.length === 0
-                      ? 'No invoice lines'
-                      : riskCount > 0
-                      ? `${riskCount} items need decision`
-                      : 'All items cleared'}
+              </motion.span>
+              </AnimatePresence>
+              <AnimatePresence initial={false} mode="wait">
+                <motion.span
+                  animate={{ opacity: 1, y: 0 }}
+                  className="transition-all duration-200"
+                  exit={{ opacity: 0, y: -2 }}
+                  initial={{ opacity: 0, y: 2 }}
+                  key={headerStatusText}
+                  transition={{ duration: 0.2 }}
+                >
+                  {headerStatusText}
+                </motion.span>
+              </AnimatePresence>
             </div>
+            )}
 
-            <label
-              className={`min-h-11 cursor-pointer flex items-center gap-2 rounded border px-3 text-[11px] font-bold transition-all duration-150 active:scale-95 ${
-                isAgentRunning
-                  ? 'pointer-events-none border-slate-200 bg-slate-100 text-slate-400'
-                  : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
-              }`}
-              htmlFor="invoice-upload"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              {selectedFile ? 'Replace invoice' : 'Upload invoice'}
-            </label>
             <input
               accept={acceptedInvoiceFileTypes}
               className="sr-only"
@@ -1789,36 +1847,42 @@ export function ClinTrialWorkspace() {
               type="file"
             />
 
-            <button
-              className={`min-h-11 rounded px-3 text-[11px] font-bold transition-all duration-150 active:scale-95 ${
-                canRunAgent
-                  ? 'cursor-pointer bg-[#0f766e] text-white hover:bg-teal-800'
-                  : 'cursor-not-allowed bg-slate-200 text-slate-500'
-              }`}
-              disabled={!canRunAgent}
-              type="submit"
-            >
-              {isAgentRunning ? 'Running...' : 'Run review'}
-            </button>
-
-            {canResetAnalysis && (
+            {/* Only visible when an invoice has been staged/paused/completed — hidden in empty state */}
+            {hasUploadedFile && (
               <button
-                aria-label="Reset analysis"
-                className="min-h-11 cursor-pointer whitespace-nowrap rounded border border-slate-300 bg-white px-3 text-[11px] font-bold text-slate-600 transition-all duration-150 hover:bg-slate-50 hover:text-slate-900 active:scale-95"
-                onClick={resetAnalysis}
-                title="Reset analysis"
+                className="flex items-center gap-1.5 bg-white border border-slate-300 text-slate-600 hover:bg-slate-50 rounded px-3 py-2 text-[11px] font-bold"
+                onClick={handleResetWorkspace}
                 type="button"
               >
-                <span className="inline-flex items-center gap-2">
-                  <RotateCcw className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">Reset analysis</span>
-                </span>
+                <RotateCcw size={14} />
+                Reset workspace
+              </button>
+            )}
+
+            {hasUploadedFile && (
+              <button
+                className="min-h-11 cursor-pointer rounded border border-teal-200 bg-white px-3 text-[11px] font-bold text-teal-800 transition-all duration-150 hover:bg-teal-50 active:scale-95 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400"
+                disabled={!canRunAgent}
+                type="submit"
+              >
+                <AnimatePresence initial={false} mode="wait">
+                  <motion.span
+                    animate={{ opacity: 1 }}
+                    className="transition-all duration-200"
+                    exit={{ opacity: 0 }}
+                    initial={{ opacity: 0 }}
+                    key={isAgentRunning ? 'analyzing' : 'ready'}
+                    transition={{ duration: 0.2 }}
+                  >
+                    {isAgentRunning ? 'Analyzing...' : 'Begin review'}
+                  </motion.span>
+                </AnimatePresence>
               </button>
             )}
 
             {isAgentRunning && (
               <button
-                aria-label="Cancel backend review"
+                aria-label="Cancel review"
                 className="min-h-11 min-w-11 cursor-pointer rounded border border-slate-300 bg-white px-3 text-slate-500 transition-all duration-150 hover:bg-slate-50 hover:text-slate-800 active:scale-95"
                 onClick={cancelBackendReview}
                 type="button"
@@ -1831,7 +1895,7 @@ export function ClinTrialWorkspace() {
         </div>
 
         {/* Protocol Metadata Subheader */}
-        <div className="px-5 py-1.5 border-t border-slate-200 flex items-center gap-2.5 flex-wrap bg-slate-50 text-xs">
+        <div className="w-full px-5 py-1.5 border-t border-b border-slate-200 flex items-center gap-2.5 flex-wrap bg-slate-50/50 text-xs">
           <span className="font-mono font-semibold text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded text-[11px]">
             <span className="mr-1 font-sans font-bold text-teal-900/60">Protocol</span>
             CTJ301UC201
@@ -1842,35 +1906,91 @@ export function ClinTrialWorkspace() {
           </span>
           <span className="text-slate-500 font-medium">NeonBlanc Hospital</span>
 
+          {hasUploadedFile && (
           <div className="ml-auto flex min-w-0 items-center gap-2">
             <span
               className={`inline-flex min-w-0 max-w-[460px] items-center gap-1.5 rounded border px-2.5 py-1 font-mono text-[10px] tracking-wider ${agentStatusStyle}`}
               role={agentError ? 'alert' : 'status'}
             >
-              <span className={`h-1.5 w-1.5 flex-none rounded-full ${isAgentRunning ? 'animate-pulse bg-blue-500' : agentStatus === 'failed' ? 'bg-rose-500' : agentStatus === 'done' ? 'bg-teal-700' : 'bg-slate-400'}`}></span>
-              <span className="truncate">
-              {compactText(agentMessage, 76)}
-              </span>
+              <span className={`h-1.5 w-1.5 flex-none rounded-full ${isAgentRunning ? 'animate-pulse bg-blue-500' : agentStatus === 'failed' ? 'bg-red-700' : agentStatus === 'done' ? 'bg-teal-700' : 'bg-slate-400'}`}></span>
+              <AnimatePresence initial={false} mode="wait">
+                <motion.span
+                  animate={{ opacity: 1 }}
+                  className="truncate transition-all duration-200"
+                  exit={{ opacity: 0 }}
+                  initial={{ opacity: 0 }}
+                  key={agentMessage}
+                  transition={{ duration: 0.2 }}
+                >
+                  {compactText(agentMessage, 76)}
+                </motion.span>
+              </AnimatePresence>
             </span>
           </div>
+          )}
         </div>
       </header>
 
       {/* ============ CORE WORKSPACE BODY ============ */}
+      {!hasUploadedFile ? (
+        <main className="w-full h-full bg-slate-50 flex items-center justify-center p-6">
+          <div className="w-full max-w-3xl bg-white rounded-2xl shadow-sm border border-slate-200 p-10">
+            <h2 className="text-2xl font-semibold text-slate-800">
+              Ready for Evidence-Based Audit
+            </h2>
+            <p className="text-slate-500 mt-1">
+              Upload an invoice to instantly cross-reference line items against Protocol CTJ301UC201 and GCP rules.
+            </p>
+            <div
+              className="mt-6 border-2 border-dashed border-slate-300 rounded-xl bg-slate-50/50 hover:bg-slate-100 transition-colors py-16 px-10 flex flex-col items-center justify-center cursor-pointer"
+              onClick={() => invoiceInputRef.current?.click()}
+              onDragOver={(event: DragEvent<HTMLDivElement>) => event.preventDefault()}
+              onDrop={(event: DragEvent<HTMLDivElement>) => {
+                event.preventDefault();
+                handleInvoiceFileChange({
+                  target: { files: event.dataTransfer.files },
+                } as ChangeEvent<HTMLInputElement>);
+              }}
+            >
+              <FileUp className="text-teal-800 mb-4" size={56} />
+              <button
+                className="bg-teal-800 text-white hover:bg-teal-900 px-5 py-2.5 rounded-md font-semibold text-sm"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  invoiceInputRef.current?.click();
+                }}
+                type="button"
+              >
+                Upload invoice
+              </button>
+              <p className="text-xs text-slate-400 mt-3">
+                Supports PDF, TIFF, and structured EDI
+              </p>
+            </div>
+            <button
+              className="mt-6 text-sm font-medium text-slate-500 hover:text-teal-700 flex items-center gap-2"
+              onClick={handleLoadSampleInvoice}
+              type="button"
+            >
+              <span>↳</span> Or auto-load sample invoice PRO-2024-0837
+            </button>
+          </div>
+        </main>
+      ) : (
       <main className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-[260px_1.5fr_1fr] divide-x divide-slate-200">
         
         {/* LEFT COLUMN: Line Items Navigator */}
-        <section className="flex flex-col min-h-0 bg-slate-50/50">
+        <section className="flex flex-col min-h-0 bg-white">
           {/* Header & Stats */}
-          <div className="flex-none p-3 border-b border-slate-200 bg-white">
+          <div className={`flex-none p-3 bg-white ${hasUploadedFile ? 'border-b border-slate-200' : ''}`}>
             <div className="flex items-center justify-between mb-2">
               <span className="font-mono text-[10px] tracking-wider uppercase text-slate-500 font-semibold">
                 Line items
               </span>
               <span className="font-mono text-[10px] text-slate-400 font-semibold">
-                {items.length > 0
-                  ? `${items.filter(i => i.status === 'pass').length} / ${items.length} Cleared`
-                  : 'Awaiting upload'}
+                {(hasUploadedFile ? items : INITIAL_ITEMS).length > 0
+                  ? `${(hasUploadedFile ? items : INITIAL_ITEMS).filter(i => i.status === 'pass').length} / ${(hasUploadedFile ? items : INITIAL_ITEMS).length} Cleared`
+                  : 'Invoice required'}
               </span>
             </div>
 
@@ -1881,7 +2001,7 @@ export function ClinTrialWorkspace() {
               </span>
               <input
                 type="text"
-                placeholder="Search code, desc..."
+                placeholder="Search ID or description..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-8 pr-7 py-1 bg-white border border-slate-200 rounded text-[11px] placeholder-slate-400 text-slate-800 focus:outline-none focus:border-emerald-800 focus:ring-1 focus:ring-emerald-800 transition-all"
@@ -1904,7 +2024,7 @@ export function ClinTrialWorkspace() {
                   onClick={() => setSelectedCategory(cat)}
                   className={`text-[8.5px] font-mono whitespace-nowrap px-2 py-0.5 rounded cursor-pointer transition-all border ${
                     selectedCategory === cat
-                      ? 'bg-[#0f766e] text-white border-[#0f766e]'
+                      ? 'bg-white text-teal-800 border-teal-200'
                       : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
@@ -1916,9 +2036,9 @@ export function ClinTrialWorkspace() {
 
           {/* List Wrapper */}
           <div className="flex-1 overflow-y-auto min-h-0">
-            {filteredItems.length === 0 ? (
-              <div className="p-8 text-center text-xs text-slate-400 font-medium">
-                {emptyLineItemsMessage}
+            {hasUploadedFile && filteredItems.length === 0 ? (
+              <div className="p-8 text-center text-sm text-slate-400">
+                {hasUploadedFile ? emptyLineItemsMessage : 'No invoice items available'}
               </div>
             ) : (
               <AnimatePresence initial={false} mode="popLayout">
@@ -1947,7 +2067,7 @@ export function ClinTrialWorkspace() {
                       id={`sidebar-item-compact-${item.id}`}
                     >
                       <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ backgroundColor: meta.dot }}></span>
+                        <span className={`h-1.5 w-1.5 flex-none rounded-full ${severityClasses[getSeverityColor(item.complianceScore)].background}`} />
                         <span className="font-mono tracking-tight text-[10px] font-bold text-slate-500 group-hover:text-teal-700 truncate">
                           {item.id}
                         </span>
@@ -1956,10 +2076,7 @@ export function ClinTrialWorkspace() {
                         <span className="font-mono tracking-tight text-[10.5px] font-bold text-slate-700">
                           {item.amount}
                         </span>
-                        <span
-                          className="text-[8.5px] font-bold px-1.5 py-0.5 rounded-sm select-none"
-                          style={{ color: meta.color, backgroundColor: meta.bg }}
-                        >
+                        <span className="text-[8.5px] font-bold select-none text-slate-500">
                           {meta.label}
                         </span>
                       </div>
@@ -1976,9 +2093,7 @@ export function ClinTrialWorkspace() {
                     layout={!shouldReduceMotion}
                     onClick={() => handleSelectItem(item.id)}
                     className="group cursor-pointer p-3 border-b border-slate-100 transition-colors duration-150 flex flex-col gap-1 bg-white"
-                    style={{
-                      borderLeft: '4px solid #0f766e',
-                    }}
+                    style={{ borderLeft: `4px solid ${item.id === 'LI-0473' ? '#b91c1c' : '#cbd5e1'}` }}
                     transition={{
                       delay: motionStaggerDelay(itemIndex, shouldReduceMotion),
                       duration: shouldReduceMotion ? 0.01 : 0.18,
@@ -1987,8 +2102,8 @@ export function ClinTrialWorkspace() {
                   >
                     <div className="flex justify-between items-center gap-1.5">
                       <span className="flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: meta.dot }}></span>
-                        <span className="font-mono tracking-tight text-[11px] font-bold text-[#0f766e]">
+                        <span className={`w-1.5 h-1.5 rounded-full ${severityClasses[getSeverityColor(item.complianceScore)].background}`}></span>
+                        <span className={`font-mono tracking-tight text-[11px] font-bold ${item.id === 'LI-0473' ? 'text-red-700' : 'text-slate-700'}`}>
                           {item.id}
                         </span>
                       </span>
@@ -2006,13 +2121,12 @@ export function ClinTrialWorkspace() {
                         {item.cat}
                       </span>
                       <span
-                        className="text-[9px] font-bold px-2 py-0.5 rounded-sm select-none border"
+                        className="text-[9px] font-bold px-2 py-0.5 rounded-sm select-none border border-slate-200 bg-white text-slate-700"
                         style={{ 
-                          color: meta.color, 
-                          backgroundColor: meta.bg, 
-                          borderColor: meta.border || 'transparent' 
+                          borderColor: meta.border
                         }}
                       >
+                        <span className={`w-1.5 h-1.5 rounded-full ${item.id === 'LI-0473' ? 'bg-red-600' : item.status === 'pass' ? 'bg-emerald-600' : item.status === 'review' ? 'bg-amber-600' : 'bg-slate-400'} mr-1.5 inline-block`} />
                         {meta.label}
                       </span>
                     </div>
@@ -2025,8 +2139,9 @@ export function ClinTrialWorkspace() {
         </section>
 
         {/* MIDDLE COLUMN: Protocol Evidence Core & Auditor Form */}
-        <section className="flex flex-col min-h-0 bg-slate-50/30">
+        <section className="flex flex-col min-h-0 bg-slate-50">
           {/* Header Area */}
+          {hasUploadedFile && (
           <div className="flex-none p-4 pb-3.5 border-b border-slate-200 bg-white">
             <div className="flex items-center gap-2.5 flex-wrap">
               <span className="text-base font-bold tracking-tight text-slate-800">Protocol evidence</span>
@@ -2043,6 +2158,7 @@ export function ClinTrialWorkspace() {
                       borderColor: selMeta.border || 'transparent'
                     }}
                   >
+                    <span className={`w-1.5 h-1.5 rounded-full ${selectedItem.status === 'flag' || selectedItem.status === 'block' ? 'bg-red-600' : selectedItem.status === 'review' ? 'bg-amber-600' : selectedItem.status === 'pass' ? 'bg-emerald-600' : 'bg-slate-400'} mr-1.5 inline-block`} />
                     {selMeta.label}
                   </span>
 
@@ -2051,12 +2167,12 @@ export function ClinTrialWorkspace() {
                     onClick={() => setShowAiNotes(!showAiNotes)}
                     className={`ml-auto flex items-center gap-1.5 text-[10.5px] font-bold px-2.5 py-1 rounded transition-all border ${
                       showAiNotes
-                        ? 'bg-[#3b427a] text-white border-[#3b427a]'
+                        ? 'bg-white text-slate-700 border-slate-300'
                         : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
                     }`}
                   >
                     <Eye className="w-3.5 h-3.5" />
-                    {showAiNotes ? 'AI Notes Active' : 'Show AI Notes'}
+                    {showAiNotes ? 'AI insights visible' : 'Show AI insights'}
                   </button>
                 </>
               ) : (
@@ -2075,10 +2191,11 @@ export function ClinTrialWorkspace() {
               </div>
             ) : (
               <div className="text-[13px] text-slate-500 mt-1.5 font-medium">
-                No invoice evidence has been loaded.
+                No invoice evidence is available.
               </div>
             )}
           </div>
+          )}
 
           {/* Scrollable Evidence Area */}
           <div className="flex-1 overflow-y-auto min-h-0 p-5">
@@ -2094,6 +2211,7 @@ export function ClinTrialWorkspace() {
                 onRunReview={() => {
                   void startBackendReview();
                 }}
+                onChangeFile={handleChangeFile}
                 phase={scanPreviewPhase}
                 previewUrl={invoicePreviewUrl}
               />
@@ -2118,15 +2236,16 @@ export function ClinTrialWorkspace() {
             >
               <div className="flex items-center gap-2.5 mb-2.5">
                 <span 
-                  className={`font-mono text-[9.5px] font-bold tracking-widest text-white px-2 py-0.5 rounded-sm ${evidenceHeroTone.badge}`}
+                  className="font-mono text-[9.5px] font-bold tracking-widest text-slate-700 bg-white border border-slate-200 px-2 py-0.5 rounded-sm"
                 >
-                  AI SYNTHESIS
+                  <span className={`w-1.5 h-1.5 rounded-full ${evidenceHeroTone.dot} mr-1.5 inline-block`} />
+                  AI ASSESSMENT
                 </span>
                 <span className={`text-xs font-bold ${evidenceHeroTone.text}`}>
                   {evidenceHeroTone.label}
                 </span>
                 <span className="ml-auto font-mono text-[10px] text-slate-400 font-semibold">
-                  {prioritizedEvidence.length} sources analyzed
+                  {prioritizedEvidence.length} sources assessed
                 </span>
               </div>
               <div className="text-[13.5px] text-slate-800 leading-relaxed font-medium">
@@ -2148,16 +2267,16 @@ export function ClinTrialWorkspace() {
                     <div className="flex items-center gap-2.5">
                       <span className="flex h-2 w-2 relative">
                         {conflictCount > 0 && (
-                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-700 opacity-75"></span>
                         )}
-                        <span className={`relative inline-flex rounded-full h-2 w-2 ${conflictCount > 0 ? 'bg-rose-500' : 'bg-amber-500'}`}></span>
+                        <span className={`relative inline-flex rounded-full h-2 w-2 ${conflictCount > 0 ? 'bg-red-700' : 'bg-amber-500'}`}></span>
                       </span>
                       <span className="font-sans text-[13.5px] font-bold text-slate-800 group-hover:text-teal-700 transition-colors">
-                        View Evidence Sources ({conflictCount} {conflictCount === 1 ? 'Conflict' : 'Conflicts'}{warnCount > 0 ? `, ${warnCount} Warning${warnCount === 1 ? '' : 's'}` : ''})
+                        Review evidence sources ({conflictCount} {conflictCount === 1 ? 'Conflict' : 'Conflicts'}{warnCount > 0 ? `, ${warnCount} Warning${warnCount === 1 ? '' : 's'}` : ''})
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 text-xs font-mono text-slate-400 font-semibold group-hover:text-teal-700 transition-colors">
-                      <span>{evidenceExpanded ? 'Collapse' : 'Expand'}</span>
+                      <span>{evidenceExpanded ? 'Hide details' : 'View details'}</span>
                       <ChevronDown className={`w-4 h-4 transition-transform duration-200 stroke-[2.5] ${evidenceExpanded ? 'rotate-180 text-teal-700' : 'text-slate-400'}`} />
                     </div>
                   </button>
@@ -2192,7 +2311,7 @@ export function ClinTrialWorkspace() {
                             </div>
 
                             <div
-                              className="font-mono text-[11px] text-teal-700 font-semibold mb-1.5"
+                              className={`font-mono text-[11px] font-semibold mb-1.5 ${ev.verdict === 'warn' ? 'text-amber-900' : 'text-teal-700'}`}
                               title={ev.locator}
                             >
                               {ev.ref}
@@ -2210,7 +2329,7 @@ export function ClinTrialWorkspace() {
                               </details>
                             )}
 
-                            <div className="text-[13px] text-slate-700 leading-relaxed">
+                            <div className={`text-[13px] leading-relaxed ${ev.verdict === 'warn' ? 'text-amber-900' : 'text-slate-700'}`}>
                               {ev.text}
                             </div>
 
@@ -2218,7 +2337,7 @@ export function ClinTrialWorkspace() {
                             {showAiNotes && (
                               (() => {
                                 const aiStyle = ev.verdict === 'conflict'
-                                  ? { bg: '#fff1f2', border: '#f43f5e', badgeBg: '#e11d48', text: '#e11d48' }
+                                  ? { bg: '#ffffff', border: '#b91c1c', badgeBg: '#b91c1c', text: '#b91c1c' }
                                   : ev.verdict === 'warn'
                                   ? { bg: '#fffbeb', border: '#fde68a', badgeBg: '#d97706', text: '#b45309' }
                                   : ev.verdict === 'match'
@@ -2258,28 +2377,25 @@ export function ClinTrialWorkspace() {
                       <Activity className={`h-4 w-4 ${isAgentRunning ? 'animate-pulse' : ''}`} />
                     </div>
                     <div className="text-[13px] font-bold text-slate-700">
-                      Evidence search in progress
+                      Evidence retrieval in progress
                     </div>
                     <div className="mt-1 text-[12px] leading-relaxed text-slate-400">
-                      Evidence cards will appear here as soon as source ranking completes for this line.
+                      Evidence will appear when source assessment is complete.
                     </div>
                   </div>
                 </div>
               )
             ) : (
-              <div className="h-full min-h-[280px] flex items-center justify-center text-center">
-                <div className="max-w-xs">
-                  <div className="mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded border border-slate-200 bg-white text-slate-400">
-                    <FileText className="h-4 w-4" />
-                  </div>
-                  <div className="text-[13px] font-bold text-slate-700">
-                    No evidence packet yet
-                  </div>
-                  <div className="mt-1 text-[12px] leading-relaxed text-slate-400">
-                    Upload an invoice and run review to populate evidence sources.
+                <div className="h-full min-h-[280px] flex items-center justify-center text-center">
+                  <div className="max-w-xs">
+                    <div className="text-[13px] font-bold text-slate-700">
+                      Evidence review ready
+                    </div>
+                    <div className="mt-1 text-[12px] leading-relaxed text-slate-400">
+                      Begin review to cross-reference invoice items against protocol and GCP controls.
+                    </div>
                   </div>
                 </div>
-              </div>
             )}
               </motion.div>
             )}
@@ -2287,8 +2403,8 @@ export function ClinTrialWorkspace() {
           </div>
 
           {/* STICKY BOTTOM AUDITOR DECISION BAR */}
-          {selectedItem ? (
-          <div className="flex-none bg-slate-100/50 border-t border-slate-200/80 p-4 transition-all duration-300">
+          {hasUploadedFile && (selectedItem ? (
+          <div className="mt-auto flex-none bg-slate-100/50 border-t border-slate-200/80 p-4 transition-all duration-300">
             <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
               <div className="flex items-center gap-2">
                 <span className="w-2 h-2 rounded-sm bg-teal-700"></span>
@@ -2307,23 +2423,22 @@ export function ClinTrialWorkspace() {
 
             <div className="flex flex-col gap-3">
               {/* Row 1: Decision options and inline Quick Sign if applicable */}
-              <div className="flex flex-wrap items-center justify-between gap-3 bg-white/60 p-2 rounded-lg border border-slate-200/50">
-                <div className="flex gap-1.5 flex-wrap">
+              <div className="flex items-center gap-3 flex-wrap bg-white/60 p-2 rounded-lg border border-slate-200/50">
+                <div className="flex items-center gap-3 flex-wrap">
                   {getDecisionOptionStyle('approve', 'Approve')}
                   {getDecisionOptionStyle('partial', 'Partial')}
                   {getDecisionOptionStyle('escalate', 'Escalate')}
                   {getDecisionOptionStyle('reject', 'Reject')}
+                  {/* Quick sign action for Approve or Partial (since justification is optional) */}
+                  {(decision === 'approve' || decision === 'partial') && (
+                    <button
+                      onClick={handleSubmit}
+                      className="cursor-pointer rounded border border-slate-300 bg-white px-4 py-1.5 font-sans text-[12px] font-bold text-slate-700 transition-opacity duration-200 hover:bg-slate-50 active:scale-95"
+                    >
+                      Quick Sign &amp; Log
+                    </button>
+                  )}
                 </div>
-
-                {/* Quick sign action for Approve or Partial (since justification is optional) */}
-                {(decision === 'approve' || decision === 'partial') && (
-                  <button
-                    onClick={handleSubmit}
-                    className="cursor-pointer font-sans text-[12px] font-bold px-4 py-1.5 rounded bg-teal-700 text-white hover:bg-teal-800 transition-all duration-150 active:scale-95 shadow-sm"
-                  >
-                    Quick Sign &amp; Log
-                  </button>
-                )}
               </div>
 
               {/* Collapsible area for Mandatory Justification (Reject / Escalate) */}
@@ -2357,10 +2472,9 @@ export function ClinTrialWorkspace() {
                     <button
                       disabled={!canSubmit}
                       onClick={handleSubmit}
-                      className="cursor-pointer font-sans text-[12.5px] font-bold px-4 py-2 rounded whitespace-nowrap transition-all duration-150 active:scale-95 border border-transparent shadow-sm"
+                      className="cursor-pointer font-sans text-[12.5px] font-bold px-4 py-2 rounded whitespace-nowrap transition-all duration-150 active:scale-95 border border-slate-300 bg-white shadow-sm"
                       style={{
-                        backgroundColor: canSubmit ? (decision === 'reject' ? '#dc2626' : '#1e293b') : '#cbd5e1',
-                        color: canSubmit ? '#FFFFFF' : '#64748b',
+                        color: canSubmit ? '#334155' : '#64748b',
                       }}
                     >
                       Sign &amp; Log {decision === 'reject' ? 'Rejection' : 'Escalation'}
@@ -2384,12 +2498,12 @@ export function ClinTrialWorkspace() {
                 </span>
               </div>
             </div>
-          )}
+          ))}
         </section>
 
         {/* RIGHT COLUMN: Compliance Engine & Audit Trail */}
         <section className="flex flex-col min-h-0 bg-white">
-          <div className="flex-none p-4 border-b border-slate-200">
+          <div className={`flex-none p-4 ${hasUploadedFile ? 'border-b border-slate-200' : ''}`}>
             <span className="text-base font-bold tracking-tight text-slate-800">Compliance boundary engine</span>
             <div className="text-xs text-slate-400 mt-0.5">AI assessment mapped to GCP rules</div>
           </div>
@@ -2407,35 +2521,31 @@ export function ClinTrialWorkspace() {
               >
             {/* HERO SCORE & CONFIDENCE BLOCK */}
             <motion.div variants={shouldReduceMotion ? undefined : boundaryItemVariants}
-              className={`border p-4.5 transition-all duration-200 rounded shadow-sm ${
-                selectedItem.complianceScore < 85
-                  ? 'bg-rose-50/40 border-rose-200'
-                  : 'bg-teal-50/40 border-teal-200'
-              }`}
+              className={`border p-5 transition-all duration-200 rounded-md shadow-sm bg-white ${severity.border}`}
             >
               <div className="flex items-start justify-between">
                 <div>
                   <div className={`font-mono text-[10px] tracking-wider uppercase font-semibold ${
-                    selectedItem.complianceScore < 85 ? 'text-rose-600' : 'text-teal-700'
+                    severity.text
                   }`}>
                     Compliance score
                   </div>
                   <div 
                     className={`text-[60px] font-semibold tracking-tighter leading-none mt-1.5 font-mono tabular-nums ${
-                      selectedItem.complianceScore < 85 ? 'text-rose-600' : 'text-teal-700'
+                      severity.text
                     }`}
                   >
                     {selectedItem.complianceScore}%
                   </div>
                   <div className={`text-[12.5px] font-bold mt-1.5 ${
-                    selectedItem.complianceScore < 85 ? 'text-rose-600' : 'text-teal-700'
+                    severity.text
                   }`}>
                     {selBand.label}
                   </div>
                 </div>
                 
                 <div className={`text-right border-l pl-4 ${
-                  selectedItem.complianceScore < 85 ? 'border-rose-200' : 'border-teal-200'
+                  severity.border
                 }`}>
                   <div className="font-mono text-[10px] tracking-wider uppercase text-slate-500 font-semibold">
                     AI confidence
@@ -2443,7 +2553,7 @@ export function ClinTrialWorkspace() {
                   <div className="text-[32px] font-semibold tracking-tighter text-slate-700 leading-tight mt-1.5 font-mono tabular-nums">
                     {selectedItem.aiConfidence}%
                   </div>
-                  <div className="text-[10.5px] text-slate-400 mt-0.5 font-medium">model certainty</div>
+                  <div className="text-[10.5px] text-slate-400 mt-0.5 font-medium">assessment confidence</div>
                 </div>
               </div>
             </motion.div>
@@ -2482,77 +2592,66 @@ export function ClinTrialWorkspace() {
                   style={{ left: `${selectedItem.complianceScore}%` }}
                 >
                   <span 
-                    className="font-mono tracking-tight text-[10px] font-bold text-white px-1.5 py-0.5 rounded shadow-sm animate-pulse"
-                    style={{ backgroundColor: selBand.accent }}
+                    className={`font-mono tracking-tight text-[10px] font-bold ${severity.text}`}
                   >
                     {selectedItem.complianceScore}%
                   </span>
-                  <span className="w-0.5 h-1.5" style={{ backgroundColor: selBand.accent }}></span>
+                  <span className={`w-0.5 h-1.5 ${severity.background}`}></span>
                 </div>
               </div>
 
               {/* Gauge Bar */}
               <div className="relative mt-0.5">
-                <div className="flex h-1.5 rounded overflow-hidden">
-                  <div className="w-[40%] bg-rose-500" title="Hold zone (0-40%)"></div>
-                  <div className="w-[45%] bg-amber-500" title="Auditor review zone (40-85%)"></div>
-                  <div className="w-[15%] bg-teal-600" title="Auto-clear zone (85-100%)"></div>
+                <div className="relative h-1.5 rounded overflow-hidden bg-slate-200">
+                  <div className="absolute left-[40%] h-full border-l border-slate-300" title="Auditor review starts at 40%"></div>
+                  <div className="absolute left-[85%] h-full border-l border-slate-300" title="Auto-clear starts at 85%"></div>
                 </div>
                 {/* 85% Auto-clear threshold line */}
                 <div className="absolute left-[85%] top-[-4px] bottom-[-4px] border-l-2 border-dashed border-slate-900/60" title="Auto-clear threshold at 85%"></div>
-                {/* Precise black vertical indicator cutting through the gauge bar */}
+                {/* Current score indicator */}
                 <div 
-                  className="absolute top-[-3px] bottom-[-3px] w-0.5 bg-black z-10 shadow-sm transition-all duration-300" 
+                  className={`absolute top-0 h-full w-0.5 z-10 transition-all duration-300 ${severity.background}`}
                   style={{ left: `${selectedItem.complianceScore}%` }}
-                >
-                  <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-full w-0 h-0 border-[3.5px] border-transparent border-t-black"></div>
-                </div>
+                />
               </div>
 
               {/* Gauge labels */}
               <div className="flex justify-between mt-2.5 font-mono text-[9px] tracking-wider text-slate-400 font-bold uppercase select-none">
-                <span className="text-rose-600">Hold</span>
+                <span className="text-red-700">Hold</span>
                 <span className="text-amber-600">Auditor review</span>
                 <span className="text-teal-700">Auto-clear (85%)</span>
               </div>
             </motion.div>
 
-            {/* GCP Rules mapped */}
-            <motion.div variants={shouldReduceMotion ? undefined : boundaryItemVariants} className="mt-4">
-              <div className="font-mono text-[9.5px] tracking-wider uppercase text-slate-500 font-semibold mb-2">
-                GCP rule mapping
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {selectedItem.gcpRules.map((rule) => (
-                  <span 
-                    key={rule}
-                    className="font-mono text-[10.5px] text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded"
-                  >
-                    {rule}
-                  </span>
-                ))}
-              </div>
-            </motion.div>
-
-            {/* Bottom recommendation card */}
-            <motion.div variants={shouldReduceMotion ? undefined : boundaryItemVariants}
-              className="mt-4 border-l-4 p-3.5 transition-all duration-200 rounded shadow-sm"
-              style={{
-                backgroundColor: selBand.bg,
-                borderColor: selBand.border,
-                borderLeftColor: selBand.accent
-              }}
+            <motion.div
+              variants={shouldReduceMotion ? undefined : boundaryItemVariants}
+              className="mt-4 space-y-4"
             >
-              <div className="flex items-center mb-2">
-                <span className="font-mono text-[9.5px] font-bold tracking-widest text-white bg-[#3b427a] px-2 py-0.5 rounded-sm select-none">
-                  AI RECOMMENDATION
-                </span>
+              <div className="bg-white border border-slate-200 rounded-md p-5 shadow-sm">
+                <div className="font-mono text-[9.5px] tracking-wider uppercase text-slate-500 font-semibold mb-2">
+                  GCP rule mapping
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {selectedItem.gcpRules.map((rule) => (
+                    <span
+                      key={rule}
+                      className="font-mono text-[10.5px] text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-1 rounded"
+                    >
+                      {rule}
+                    </span>
+                  ))}
+                </div>
               </div>
-              <div className="text-[13px] text-slate-800 leading-relaxed font-medium">
-                {selectedItem.rec}
-              </div>
-              <div className="mt-2 flex items-center gap-1.5 text-[11.5px] font-bold" style={{ color: selBand.accent }}>
-                <span className="text-[13px]">&rarr;</span> {getBandRouting(selectedItem.band)}
+              <div className="bg-white border border-slate-200 border-l-4 border-l-slate-700 rounded-md p-5 shadow-sm">
+                <div className="flex items-center mb-2">
+                  <span className="font-bold text-slate-800">AI RECOMMENDATION</span>
+                </div>
+                <div className="text-[13px] text-slate-800 leading-relaxed font-medium">
+                  {selectedItem.rec}
+                </div>
+                <div className="mt-2 flex items-center gap-1.5 text-[11.5px] font-bold text-slate-800">
+                  <span className="text-[13px]">&rarr;</span> {getBandRouting(selectedItem.band)}
+                </div>
               </div>
             </motion.div>
               </motion.div>
@@ -2574,16 +2673,13 @@ export function ClinTrialWorkspace() {
                 transition={{ duration: shouldReduceMotion ? 0.01 : 0.18 }}
               >
                 <div className="max-w-xs">
-                  <div className="mx-auto mb-3 flex h-9 w-9 items-center justify-center rounded border border-slate-200 bg-white text-slate-400">
-                    <SlidersHorizontal className="h-4 w-4" />
-                  </div>
                   <div className="text-[13px] font-bold text-slate-700">
-                    {selectedItem ? 'Boundary evaluation in progress' : 'No boundary result yet'}
+                    {selectedItem ? 'Control assessment in progress' : 'Audit insights will appear here'}
                   </div>
                   <div className="mt-1 text-[12px] leading-relaxed text-slate-400">
                     {selectedItem
                       ? 'Compliance score and routing will appear as soon as the agent emits a boundary decision.'
-                      : 'Compliance scores appear after backend review completes.'}
+                      : 'Upload an invoice to assess compliance boundaries and routing recommendations.'}
                   </div>
                 </div>
               </motion.div>
@@ -2610,7 +2706,7 @@ export function ClinTrialWorkspace() {
               </div>
               <div className="flex items-center gap-1.5 text-xs">
                 <span className="text-[10px] font-semibold text-slate-400">
-                  {agentTraceExpanded ? 'Hide trace' : 'Read trace'}
+                  {agentTraceExpanded ? 'Hide review activity' : 'View review activity'}
                 </span>
                 <div className="transition-transform duration-200" style={{ transform: agentTraceExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                   <ChevronDown className="w-3.5 h-3.5 text-slate-400 stroke-[2.5]" />
@@ -2622,7 +2718,7 @@ export function ClinTrialWorkspace() {
               <div className="max-h-64 overflow-y-auto border-t border-slate-150 bg-white divide-y divide-slate-100">
                 {agentTraceLog.length === 0 ? (
                   <div className="px-5 py-4 text-[11px] font-medium text-slate-400">
-                    No saved agent trace yet.
+                    No review activity is available.
                   </div>
                 ) : (
                   <>
@@ -2648,7 +2744,7 @@ export function ClinTrialWorkspace() {
                                 : 'bg-slate-100 text-slate-500'
                             }`}
                           >
-                            {entry.status ?? 'done'}
+                            {entry.status ?? 'complete'}
                           </span>
                           <div className="min-w-0 flex-1">
                             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
@@ -2719,7 +2815,7 @@ export function ClinTrialWorkspace() {
               </div>
               <div className="flex items-center gap-1.5 text-xs">
                 <span className="text-[10px] font-semibold text-slate-400">
-                  {trailExpanded ? 'Hide records' : 'View records'}
+                  {trailExpanded ? 'Hide audit records' : 'View audit records'}
                 </span>
                 <div className="transition-transform duration-200" style={{ transform: trailExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
                   <ChevronDown className="w-3.5 h-3.5 text-slate-400 stroke-[2.5]" />
@@ -2731,7 +2827,7 @@ export function ClinTrialWorkspace() {
               <div className="max-h-52 overflow-y-auto border-t border-slate-150 bg-white divide-y divide-slate-100">
                 {trail.length === 0 ? (
                   <div className="px-5 py-4 text-[11px] font-medium text-slate-400">
-                    No audit records yet.
+                    No audit records are available.
                   </div>
                 ) : (
                   trail.map((row, idx) => (
@@ -2761,6 +2857,7 @@ export function ClinTrialWorkspace() {
         </section>
 
       </main>
+      )}
     </div>
   );
 }

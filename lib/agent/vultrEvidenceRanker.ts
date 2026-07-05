@@ -319,11 +319,17 @@ function rerankQuery(request: EvidenceRankerRequest): string {
 
 function systemPrompt(): string {
   return [
-    "You are TrialGuard's evidence ranking subagent for a read-only clinical trial payment governance demo.",
-    "Rank only the evidence ids supplied by the backend.",
+    "You are ClinTrial's evidence ranking subagent for a read-only clinical trial payment governance demo.",
+    "Rank only the evidence ids supplied for this review.",
     "Do not invent sources, facts, payment approvals, or final automation boundaries.",
     "Return valid JSON only. Do not reveal hidden reasoning.",
-  ].join(" ");
+    "Output style requirements:",
+    "- Write findings as a compliance analyst would in an internal audit report, not as a system log.",
+    "- Never use technical/implementation terms (e.g. 'API', 'backend', 'model', 'inference', 'pipeline', 'extraction complete', 'processing').",
+    "- Use business/audit terminology: 'assessment', 'finding', 'evidence review', 'compliance determination'.",
+    "- Avoid casual or exclamatory tone. No emojis, no exclamation marks.",
+    "- State findings in third person, declarative sentences (e.g. 'The submitted timesheet does not match the recorded site visit dates.').",
+  ].join("\n");
 }
 
 function userPrompt(request: EvidenceRankerRequest): string {

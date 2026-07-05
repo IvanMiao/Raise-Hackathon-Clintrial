@@ -1,4 +1,4 @@
-# TrialGuard 后端 Agent 实现步骤
+# ClinTrial 后端 Agent 实现步骤
 
 ## 依据与目标
 
@@ -7,7 +7,7 @@
 - `docs/trialguard-agent-readiness.en.md`
 - `docs/trialguard-vultr-workflows.mermaid.en.md`
 
-TrialGuard 是临床试验付款场景的 read-only governance agent。它不批准付款、不释放资金、不写入真实临床或财务系统。后端目标不是实现一个普通的 `prompt -> answer` 接口，而是实现一个可审计的 evidence agent：
+ClinTrial 是临床试验付款场景的 read-only governance agent。它不批准付款、不释放资金、不写入真实临床或财务系统。后端目标不是实现一个普通的 `prompt -> answer` 接口，而是实现一个可审计的 evidence agent：
 
 ```text
 上传 invoice 图片或 PDF

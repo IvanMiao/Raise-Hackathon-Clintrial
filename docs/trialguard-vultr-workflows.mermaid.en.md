@@ -1,10 +1,10 @@
-# TrialGuard Core Workflows
+# ClinTrial Core Workflows
 
 ## 1. Product Core
 
 ```mermaid
 flowchart LR
-  A["Clinical trial payment evidence"] --> B["TrialGuard<br/>read-only governance agent"]
+  A["Clinical trial payment evidence"] --> B["ClinTrial<br/>read-only governance agent"]
   B --> C["Automation boundary playbook"]
   B --> D["Evidence quality report"]
   B --> E["Policy gap tickets"]

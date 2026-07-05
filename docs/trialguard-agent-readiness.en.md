@@ -1,8 +1,8 @@
-# TrialGuard: Agent Readiness Layer for Clinical Trial Payments
+# ClinTrial: Agent Readiness Layer for Clinical Trial Payments
 
 ## One-Line Pitch
 
-TrialGuard helps clinical trial teams decide which payment decisions are safe for AI agents to automate, which need human review, and which reveal contract, budget, protocol, or billing policy gaps.
+ClinTrial helps clinical trial teams decide which payment decisions are safe for AI agents to automate, which need human review, and which reveal contract, budget, protocol, or billing policy gaps.
 
 ## Problem
 
@@ -27,7 +27,7 @@ The safer question is:
 
 ## Product
 
-TrialGuard is a read-only governance agent for clinical trial payments.
+ClinTrial is a read-only governance agent for clinical trial payments.
 
 It does not release funds, approve invoices, or replace finance and compliance teams. It reviews historical invoices and trial documents, then creates automation boundaries for future payment agents.
 
@@ -48,7 +48,7 @@ Invoice line item
 
 ## Automation Boundaries
 
-TrialGuard classifies each payment pattern into one of four groups:
+ClinTrial classifies each payment pattern into one of four groups:
 
 | Boundary | Meaning |
 | --- | --- |
@@ -94,15 +94,15 @@ The demo should show:
 
 ## Why This Is Different
 
-TrialGuard is not a clinical trial payment platform. It is a governance layer above payment systems.
+ClinTrial is not a clinical trial payment platform. It is a governance layer above payment systems.
 
-Existing tools help process invoices and payments. TrialGuard answers a different question:
+Existing tools help process invoices and payments. ClinTrial answers a different question:
 
 > Before we let a payment agent act, what exactly is it allowed to automate?
 
 ## Positioning
 
-TrialGuard combines a vertical healthcare demo with a broader enterprise agent governance idea.
+ClinTrial combines a vertical healthcare demo with a broader enterprise agent governance idea.
 
 ```text
 Decision Data Governance = core product philosophy
@@ -114,5 +114,5 @@ Boundary playbook = business differentiation
 
 ## Final Pitch
 
-TrialGuard is not an autonomous payment approver. It is a clinical trial payment governance agent that audits invoice evidence and defines safe automation boundaries before financial agents are allowed to act.
+ClinTrial is not an autonomous payment approver. It is a clinical trial payment governance agent that audits invoice evidence and defines safe automation boundaries before financial agents are allowed to act.
 
